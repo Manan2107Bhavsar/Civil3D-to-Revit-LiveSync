@@ -6,3 +6,4 @@ obj/
 *.bak
 *.dwl
 *.dwl2
+testdata/*.dwg

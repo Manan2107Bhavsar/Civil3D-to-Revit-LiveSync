@@ -183,7 +183,11 @@ internal sealed class SyncController : IDisposable
             s.TotalEvents++;
         }
         if (DebugEvents)
-            Log.Write("event.modified", new { handle = id.Handle.ToString(), cls = id.ObjectClass?.Name, linked = s?.MappingId });
+        {
+            // Exceptions must not escape into Civil 3D's transaction.
+            try { Log.Write("event.modified", new { handle = id.Handle.ToString(), cls = id.ObjectClass?.Name, linked = s?.MappingId }); }
+            catch (System.Exception) { }
+        }
     }
 
     private void OnObjectErased(object sender, ObjectErasedEventArgs e)
@@ -197,43 +201,50 @@ internal sealed class SyncController : IDisposable
 
     private void OnTick(object? sender, EventArgs e)
     {
-        var now = DateTime.UtcNow;
+        // An exception escaping a WinForms timer tick would surface as an unhandled
+        // exception in Civil 3D; contain it per mapping and keep ticking.
         foreach (var s in _states.Values)
         {
-            if (!s.Dirty || s.Doc is null || s.LastEditUtc is null) continue;
-            if ((now - s.LastEditUtc.Value).TotalMilliseconds < Config.DebounceMs) continue;
-            if (s.SurfaceId.IsErased) { s.Dirty = false; continue; }
-
-            // Don't sync halfway through a grip-drag or an interactive edit command.
-            var cmd = s.Doc.CommandInProgress;
-            if (!string.IsNullOrEmpty(cmd))
-            {
-                if (!s.LoggedWaitingForCommand)
-                {
-                    Log.Write("debounce.wait", new { mappingId = s.MappingId, command = cmd });
-                    s.LoggedWaitingForCommand = true;
-                }
-                continue;
-            }
-
-            s.Dirty = false;
-            s.Changes++;
-            s.LastDebouncedUtc = now;
-            var change = new ChangeDetected(s, s.BurstStartUtc!.Value, s.LastEditUtc.Value, s.BurstEvents);
-            Log.Write("debounced", new
-            {
-                mappingId = s.MappingId,
-                change = s.Changes,
-                events = change.Events,
-                burstMs = (change.LastEditUtc - change.BurstStartUtc).TotalMilliseconds,
-                quietMs = (now - change.LastEditUtc).TotalMilliseconds,
-                lastEditUtc = change.LastEditUtc,
-            });
-            Ui.Write($"LiveSync [{s.MappingId}]: change #{s.Changes} detected ({change.Events} events over {(change.LastEditUtc - change.BurstStartUtc).TotalMilliseconds:0} ms).");
-
-            try { Changed?.Invoke(change); }
-            catch (System.Exception ex) { Log.Write("error", new { mappingId = s.MappingId, where = "Changed", error = ex.ToString() }); }
+            try { TickOne(s, DateTime.UtcNow); }
+            catch (System.Exception ex) { Log.Write("error", new { mappingId = s.MappingId, where = "tick", error = ex.ToString() }); s.Dirty = false; }
         }
+    }
+
+    private void TickOne(MappingState s, DateTime now)
+    {
+        if (!s.Dirty || s.Doc is null || s.LastEditUtc is null) return;
+        if ((now - s.LastEditUtc.Value).TotalMilliseconds < Config.DebounceMs) return;
+        if (s.SurfaceId.IsErased) { s.Dirty = false; return; }
+
+        // Don't sync halfway through a grip-drag or an interactive edit command.
+        var cmd = s.Doc.CommandInProgress;
+        if (!string.IsNullOrEmpty(cmd))
+        {
+            if (!s.LoggedWaitingForCommand)
+            {
+                Log.Write("debounce.wait", new { mappingId = s.MappingId, command = cmd });
+                s.LoggedWaitingForCommand = true;
+            }
+            return;
+        }
+
+        s.Dirty = false;
+        s.Changes++;
+        s.LastDebouncedUtc = now;
+        var change = new ChangeDetected(s, s.BurstStartUtc!.Value, s.LastEditUtc.Value, s.BurstEvents);
+        Log.Write("debounced", new
+        {
+            mappingId = s.MappingId,
+            change = s.Changes,
+            events = change.Events,
+            burstMs = (change.LastEditUtc - change.BurstStartUtc).TotalMilliseconds,
+            quietMs = (now - change.LastEditUtc).TotalMilliseconds,
+            lastEditUtc = change.LastEditUtc,
+        });
+        Ui.Write($"LiveSync [{s.MappingId}]: change #{s.Changes} detected ({change.Events} events over {(change.LastEditUtc - change.BurstStartUtc).TotalMilliseconds:0} ms).");
+
+        try { Changed?.Invoke(change); }
+        catch (System.Exception ex) { Log.Write("error", new { mappingId = s.MappingId, where = "Changed", error = ex.ToString() }); }
     }
 
     private void OnDocumentCreated(object sender, DocumentCollectionEventArgs e) => Attach(e.Document);

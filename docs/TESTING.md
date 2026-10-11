@@ -49,3 +49,6 @@ When you're done, tell me and I'll read the log file to check the counts and tim
 | 2026-10-10 | 0.1 | ✅ 25/25 | dev machine |
 | 2026-10-10 | 0.2 | ✅ | EG imported, 306 pts / 544 tri, breaklines Ditch + Ridge present (user) |
 | 2026-10-10 | MCP | ✅ | mcp-servers-for-revit loaded in Revit 2027 (user) |
+| 2026-10-10 | 1.1–1.3 | ✅ | loaded; LSLINK → `eg`, handle 71B8, units m; attached |
+| 2026-10-10 | 1.4–1.10 | ✅ | 7 edits → exactly 7 `debounced` lines, no double fires. Single edits quiet 751–848 ms. Multi-pick commands waited for command end: AECCADDSURFACELINE (3 events / 7.3 s), AECCADDSURFACEPOINT (7 / 14.1 s), AECCEDITSURFACEPOINT (2 / 16.2 s). UNDO of 7 points = 7 events in 82 ms → 1 line |
+| 2026-10-10 | 1.11–1.12 | ⏳ | not in log: no detach/attach; LSDEBUG turned on but no edits logged after it |
