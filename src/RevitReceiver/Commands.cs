@@ -42,22 +42,18 @@ public sealed class StatusCommand : IExternalCommand
         {
             s.AppendLine("No payload received yet.");
         }
+        foreach (var (id, a) in r.Applied)
+        {
+            s.AppendLine();
+            s.AppendLine($"Applied {id} v{a.Version} at {a.CommittedUtc.ToLocalTime():HH:mm:ss}: {a.Result.PointsApplied} points + {a.Result.CornersSet} corners"
+                         + $" (outside {a.Result.Outside}, on edge {a.Result.NearEdge}), transaction {a.Result.AddMs + a.Result.CornersMs + a.Result.CommitMs + a.Result.ResetMs:F0} ms");
+        }
         if (r.Server.LastError is { } err) s.AppendLine($"Last pipe error: {err}");
         s.AppendLine();
         s.AppendLine($"Session {r.SessionId}. Mappings in config: {r.Config.Mappings.Count}");
         s.AppendLine($"Log: {r.Log.CurrentFile ?? r.Config.ResolvedLogDir}");
 
         TaskDialog.Show("LiveSync status", s.ToString());
-        return Result.Succeeded;
-    }
-}
-
-[Transaction(TransactionMode.ReadOnly)]
-public sealed class LinkToposolidCommand : IExternalCommand
-{
-    public Result Execute(ExternalCommandData commandData, ref string message, ElementSet elements)
-    {
-        TaskDialog.Show("LiveSync", "Link Toposolid is not built yet (step 6).");
         return Result.Succeeded;
     }
 }

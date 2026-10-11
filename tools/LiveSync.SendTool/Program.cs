@@ -11,11 +11,13 @@ using LiveSync.Shared;
 //   --synthetic N    ignore the file; send an N x N grid surface (load test, e.g. 200 = 40,000 pts)
 //   --pipe NAME      pipe name (default: mapping.json pipeName)
 //   --ping           send a ping instead of a payload
+//   --dz D           raise every point by D (payload units) and give it a new version; repeats raise by D each time
 // Default payload: %APPDATA%\C3dRevitLiveSync\payloads\eg.json (written by Civil 3D LSSYNC).
 
 string? file = null;
 int repeat = 1, intervalMs = 0, synthetic = 0;
 bool bump = false, ping = false;
+double dz = 0;
 string pipe = ConfigStore.Load().PipeName;
 
 for (int i = 0; i < args.Length; i++)
@@ -28,8 +30,9 @@ for (int i = 0; i < args.Length; i++)
         case "--synthetic": synthetic = int.Parse(args[++i]); break;
         case "--pipe": pipe = args[++i]; break;
         case "--ping": ping = true; break;
+        case "--dz": dz = double.Parse(args[++i], System.Globalization.CultureInfo.InvariantCulture); bump = true; break;
         case "-h" or "--help":
-            Console.WriteLine("LiveSync.SendTool [payload.json] [--repeat N] [--interval MS] [--bump] [--synthetic N] [--pipe NAME] [--ping]");
+            Console.WriteLine("LiveSync.SendTool [payload.json] [--repeat N] [--interval MS] [--bump] [--synthetic N] [--pipe NAME] [--ping] [--dz D]");
             return 0;
         default: file = args[i]; break;
     }
@@ -87,6 +90,7 @@ var reader = Task.Run(async () =>
                     long t0;
                     lock (sentAt) sentAt.TryGetValue(a.Version, out t0);
                     Console.WriteLine($"  ack v{a.Version}: {a.Status}" + (a.Detail is null ? "" : $" ({a.Detail})")
+                                      + (a.Status == AckStatus.Applied ? $"  {a.PointsApplied} pts applied, {a.PointsDropped} dropped" : "")
                                       + (t0 != 0 ? $"  round trip {Stopwatch.GetElapsedTime(t0, now).TotalMilliseconds:F1} ms" : ""));
                     break;
                 case Ping:
@@ -121,6 +125,12 @@ else
     {
         var u = template;
         u.Version = bump ? baseVersion + n : template.Version;
+        if (dz != 0)
+        {
+            for (int k = 2; k < u.Vertices.Length; k += 3) u.Vertices[k] += dz;
+            for (int k = 2; k < u.ExtraPoints.Length; k += 3) u.ExtraPoints[k] += dz;
+            u.Hash = SurfaceHasher.Compute(u);
+        }
         u.Timing.SentUtc = DateTime.UtcNow;
         var bytes = MessageCodec.Serialize(u);
         lock (sentAt) sentAt[u.Version] = Stopwatch.GetTimestamp();
@@ -131,9 +141,9 @@ else
     }
 }
 
-if (await Task.WhenAny(allReplies.Task, Task.Delay(10_000)) != allReplies.Task)
+if (await Task.WhenAny(allReplies.Task, Task.Delay(30_000)) != allReplies.Task)
 {
-    Console.Error.WriteLine($"Timed out: {replies}/{expected} replies after 10 s.");
+    Console.Error.WriteLine($"Timed out: {replies}/{expected} replies after 30 s.");
     return 1;
 }
 Console.WriteLine($"Done: {replies}/{expected} replies.");

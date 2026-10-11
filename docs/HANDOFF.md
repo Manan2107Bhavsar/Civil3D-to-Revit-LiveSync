@@ -1,6 +1,6 @@
 # Session handoff — Civil 3D → Revit Live Surface Sync
 
-Last updated: **2026-10-11**, session 2 (step 2 verified, step 3 built). A new session should read this first, then `CLAUDE.md`, then `docs/PLAN.md`.
+Last updated: **2026-10-11**, session 2 (steps 2–3 verified, step 4 built). A new session should read this first, then `CLAUDE.md`, then `docs/PLAN.md`.
 
 **Resume prompt for a new session:**
 > Read `docs/HANDOFF.md`, `CLAUDE.md` and `docs/PLAN.md` in `C:\Users\bhavs\OneDrive - Saskatchewan Polytechnic\Civil3D_to_Revit`. Continue from "Next action".
@@ -63,33 +63,33 @@ An Engineering Design & Drafting Technology student (Saskatchewan Polytechnic) w
 | MCP | Revit MCP built for 2027 (added R27 config; fixed `Curve.Intersect` removed in 2027), installed, user confirmed it loads in Revit | ✅ |
 | User's Civil MCP | Added ProgID `13.9` to `CIVIL3D_PROGIDS` in `civil3d_bridge.py` (not a git repo; untested against Civil 3D) | ✅ edited |
 | 0 | `src/Shared` (LiveSync.Shared): messages, framing, hash, config store, JSONL log, units; xUnit tests; test surface generator; docs | ✅ user verified (EG: 306 pts / 544 tri, breaklines Ditch + Ridge) |
-| 1 | `src/Civil3dPlugin`: `LSLINK`, `LSUNLINK`, `LSSTATUS`, `LSRELOAD`, `LSDEBUG`; debounced detection | ✅ user tested 1.1–1.10: one change line per command, ~750–850 ms quiet, waits for command end. 1.11 (close/reopen) and 1.12 (LSDEBUG classes) were **not** done |
+| 1 | `src/Civil3dPlugin`: `LSLINK`, `LSUNLINK`, `LSSTATUS`, `LSRELOAD`, `LSDEBUG`; debounced detection | ✅ user tested 1.1–1.12: one change line per command, ~750–850 ms quiet, waits for command end |
 | 2 | Extraction (visible triangles, breakline densify, boundary loop), background payload build, hash, `LSSYNC`, payload → `payloads\<id>.json` | ✅ user tested 2026-10-11 (verified from logs): 306/544 + 132 breakline pts, boundary 66; undo and raise/lower restore the exact original hash; warm read ~1.7 ms + prep ~0.5 ms. 1.11/1.12 also done. Only 2.7 (hide boundary) not tried |
-| 3 | Revit receiver add-in (`src/RevitReceiver`), `PipeServer` + `LatestWinsMailbox` in Shared, `tools/LiveSync.SendTool` | 🧪 **built + dev-tested without Revit** (real Receiver in a console host, see TESTING results). **Not yet tested inside Revit**: user runs TESTING step 3 (3.1–3.10) |
-| 4 | ExternalEvent + in-place toposolid update from a canned payload | ⏭ next to build |
+| 3 | Revit receiver add-in (`src/RevitReceiver`), `PipeServer` + `LatestWinsMailbox` in Shared, `tools/LiveSync.SendTool` | ✅ user tested 3.1–3.7 in Revit (verified from the log; 6 MB payloads decode in 52–79 ms off the UI thread). 3.8 (second Revit busy) / 3.9 not done |
+| 4 | ExternalEvent apply (`ApplyHandler`, `ToposolidUpdater`), `CoordinateFrame`, Link Toposolid (link selected / create from payload + set shared coords), undo-aware applied memory, SendTool `--dz` | 🧪 **built, NOT yet tested in Revit** (`docs/TESTING.md` step 4, 4.1–4.13) |
 | 5 | Civil pipe client + acks + end-to-end latency logging | planned |
 | 6 | Coordinates/units, mapping on the Revit side, sketch rewrite (`SketchEditScope`) | planned |
 | 7 | Decimation, force-sync buttons, reconnect robustness, SETUP from a clean machine, large-surface timings | planned |
 
-Git log (repo): `ec88a44` plan → `4298a55` MCP note → `df55844` step 0 → `9b2c799` step 1 → `9c46942` step 1 results + hardening → `2f3440f` step 2 → `5b76213` handoff → step 3 commit (2026-10-11). Tests: `dotnet test C3dRevitLiveSync.sln` → 38 passing.
+Git log (repo): `ec88a44` plan → `4298a55` MCP note → `df55844` step 0 → `9b2c799` step 1 → `9c46942` step 1 results + hardening → `2f3440f` step 2 → `5b76213` handoff → `e73f150` step 3 → step 4 commit (2026-10-11). Tests: `dotnet test C3dRevitLiveSync.sln` → 45 passing.
 
 ## 7. Next action
 
-1. **Get the step 3 results from the user** (`docs/TESTING.md` step 3, 3.1–3.10). Read `%APPDATA%\C3dRevitLiveSync\logs\revit-*.jsonl` and record the results in TESTING. Things to watch: whether Revit shows the "unsigned add-in" prompt; the `pipe.busy` path with two Revits; whether a 6 MB payload freezes the UI (it shouldn't: the pipe and decode run on pool threads).
-2. **Build step 4:** in `Receiver`, create an `ExternalEvent` (in `OnStartup`, valid API context) and `Raise()` it after each mailbox post. Its handler `TryTake`s each mapping and:
-   - finds the doc and toposolid. Until the step 6 Link button exists, use a temporary rule: the selected toposolid, or the only toposolid in the active doc;
-   - converts m → internal ft with **no shared transform yet** (step 6). For step 4 the test project's toposolid must sit near Civil coordinates, or subtract a temporary offset;
-   - runs one `Transaction`: `GetSlabShapeEditor()` → `ResetSlabShape()` → `Enable()` → `AddPoints()`, with an `IFailuresPreprocessor`;
-   - acks `applied` (pointsApplied/Dropped, eventStartUtc, committedUtc) after the commit.
-
-   Verify every member in `C:\Program Files\Autodesk\Revit 2027\RevitAPI.xml` first. Remember: points must be inside the sketch and distinct in XY.
-3. Then steps 5–7 per `docs/PLAN.md` §4. In step 5 the Civil pipe client (`PipeClient`, Shared, reconnect every 2 s, `CurrentUserOnly`) goes next to `PipeServer`.
+1. **Get the step 4 results** (TESTING 4.1–4.13). Read `logs\revit-*.jsonl` (stages `link`, `created`, `applied`, `apply.failed`) and record them in TESTING. Key questions:
+   - Are `addZDeltaMaxMm` and `cornerZDeltaMaxMm` ≈ 0, and do the user's spot elevations match 502.992 / 500.047 / 500.802? If not, the Z semantics of `AddPoints` / `ModifySubElement` differ from the assumption (absolute Z; corner offset relative to the reset flat top). Fix `ToposolidUpdater` from the measured delta.
+   - Does `Toposolid.Create` accept points on the sketch edge (no `create.failed` / fallback)?
+   - What are `frameInverted` and `applyMs` for 307 and 22,500 points?
+2. **Build step 5:** a `PipeClient` in Shared (background thread, reconnects every 2 s, `CurrentUserOnly`, `Framing`). The Civil `SyncController` sends each built payload (not only writing the file) with `Timing.SentUtc`, reads acks and logs `ack` with `editToCommitMs`. It prints `LiveSync EG v…: N pts, applied in Revit X.XX s after edit` on the command line. Skip the send when the hash equals the last **acked** hash. Civil `LSSTATUS` shows the pipe state.
+3. Then steps 6 (mapping offset/rotation, sketch rewrite via `SketchEditScope` when the boundary changes; Link is already done) and 7 per `docs/PLAN.md` §4.
 
 ## 8. Open / watch items
 
 - Whether Civil's `GetTinProperties().NumberOfTriangles` counts hidden triangles (TESTING 2.7 will show this; it only affects display).
 - Whether LandXML-imported breaklines come back through `SurfaceBreakline.Vertices` (expect 2 breaklines and 132 extra points).
-- `GetTotalTransform()` on `ProjectLocation` (inherited from `Instance`): confirm in step 6.
+- `GetTotalTransform()` direction is resolved at runtime (`CoordinateFrame`); with a pure rotation and zero offset it's ambiguous (logged as `frameInverted`).
+- Boundary changes: step 4 drops points outside the existing sketch (`outside` in the log); sketch rewrite is step 6.
+- The mailbox-drain apply is lost if the transaction can't start (e.g. Revit in sketch mode): it's acked `error`, and the next edit or Force Sync (step 7) recovers.
+- A `synthetic` mapping gets added to `mapping.json` by test 4.12; remove it afterwards (Civil `LSUNLINK synthetic` or edit the file).
 - Toposolid `AddPoints` performance at 10k–50k points is unknown; measure in step 7.
 - Port 8080 binds all interfaces. This was mentioned to the user but not changed (their MCP; ask before touching).
 - Old deploy folders under `deploy\civil3d\` accumulate; deleting them once Civil 3D is closed is safe.

@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+### Step 4 — 2026-10-11
+- Revit: an `ExternalEvent` (`ApplyHandler`) drains the latest-wins mailbox on the API thread. Per mapping, `ToposolidUpdater.Apply` runs one Transaction `LiveSync: <surface> v<N>`:
+  - `ResetSlabShape` → `Enable` → `AddPoints` (only points strictly inside the sketch and distinct in XY);
+  - sketch-corner heights are set by `ModifySubElement` from the Civil TIN;
+  - a failures preprocessor deletes warnings, and errors roll back without a dialog.
+- The ack is sent after the commit: `applied` (points applied/dropped, eventStart/committed timing), `skipped-same-hash`, `stale`, or `error` (unlinked, not found, failed).
+- Diagnostics: Revit's stored Z is read back and logged as `addZDeltaMaxMm` / `cornerZDeltaMaxMm`, because the docs don't define the Z semantics.
+- `CoordinateFrame`: payload units → ft, then shared → internal. It works out which way `GetTotalTransform` goes from `GetProjectPosition(XYZ.Zero)`.
+- **Link Toposolid** works:
+  - with one toposolid selected, it links that toposolid and applies the last payload;
+  - with nothing selected, it creates a toposolid from the last payload. If the surface is more than 10 km from the origin, it first offers to set shared coordinates (E/N = surface centre, elevation 0).
+  - Either way it writes `revit` into `mapping.json` (UniqueId, ElementId, path).
+- Undo/Redo in Revit clears the "already applied" memory (`DocumentChanged`).
+- Shared: `PlanarRegion`, `TinInterpolator`, `ToposolidPlanner` (+7 tests, 45 total).
+- SendTool: `--dz D` (raise and re-version), prints applied counts, 30 s ack timeout.
+
 ### Step 3 — 2026-10-11
 - Shared: `PipeServer` (named pipe, length-prefixed, multi-client, current-user ACL, `busy` if another process owns the name) and `LatestWinsMailbox<T>`; `AckStatus.Received` and `AckStatus.Stale`. 38 tests (6 new, including a real-pipe round trip).
 - `src/RevitReceiver` (`LiveSync.Revit.dll`, Revit 2027): `IExternalApplication` starts the pipe server; `Receiver` logs `received` (counts, bytes, decode/transit ms), posts into the mailbox and acks `received`/`stale`. Ribbon panel LiveSync: Status (works with no project open), Link Toposolid and Force Sync stubs.

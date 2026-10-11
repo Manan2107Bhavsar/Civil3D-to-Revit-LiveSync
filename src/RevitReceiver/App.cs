@@ -1,3 +1,4 @@
+using Autodesk.Revit.DB.Events;
 using Autodesk.Revit.UI;
 using LiveSync.Shared;
 
@@ -20,11 +21,14 @@ public sealed class App : IExternalApplication
             var config = ConfigStore.Load();
             var log = new JsonlLog("revit", config.ResolvedLogDir);
             var receiver = new Receiver(config, log, application.ControlledApplication.VersionBuild);
+            // Created here because ExternalEvent.Create needs an API context; raised from pipe threads.
+            receiver.AttachApplyEvent(ExternalEvent.Create(new ApplyHandler(receiver)));
             Current = receiver;
             // Fire and forget: the first pipe instance is created on a pool thread in a few ms.
             // Startup must not wait on it.
             _ = receiver.StartAsync();
 
+            application.ControlledApplication.DocumentChanged += OnDocumentChanged;
             CreateRibbon(application);
             return Result.Succeeded;
         }
@@ -37,9 +41,18 @@ public sealed class App : IExternalApplication
 
     public Result OnShutdown(UIControlledApplication application)
     {
+        application.ControlledApplication.DocumentChanged -= OnDocumentChanged;
         Current?.Dispose();
         Current = null;
         return Result.Succeeded;
+    }
+
+    // After an Undo/Redo the toposolid no longer matches what was last applied, so forget it;
+    // otherwise the next payload with that hash would be skipped as "unchanged".
+    private static void OnDocumentChanged(object? sender, DocumentChangedEventArgs e)
+    {
+        if (e.Operation is UndoOperation.TransactionUndone or UndoOperation.TransactionRedone)
+            Current?.ForgetApplied("undo/redo");
     }
 
     private static void CreateRibbon(UIControlledApplication application)
@@ -49,7 +62,7 @@ public sealed class App : IExternalApplication
         string asm = typeof(App).Assembly.Location;
         panel.AddItem(new PushButtonData("LiveSyncLink", "Link\nToposolid", asm, typeof(LinkToposolidCommand).FullName)
         {
-            ToolTip = "Link a toposolid to a Civil 3D surface mapping (step 6).",
+            ToolTip = "Select a toposolid to link it to the Civil 3D surface last received, or select nothing to create one from that surface.",
         });
         panel.AddItem(new PushButtonData("LiveSyncForce", "Force\nSync", asm, typeof(ForceSyncCommand).FullName)
         {

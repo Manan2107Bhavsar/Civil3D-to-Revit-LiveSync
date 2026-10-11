@@ -77,6 +77,30 @@ Setup: close Revit (or leave it open; see SETUP §6) → `dotnet build src\Revit
 | 3.9 | Close Revit, then `SendTool` | `No server within 5 s. Is Revit running …` (exit code 1) |
 | 3.10 | Send me (or open) `%APPDATA%\C3dRevitLiveSync\logs\revit-<today>.jsonl` | Stages: `start`, `pipe.listening`, `pipe.connected`, `received` (vertices, bytes, decodeMs, transitMs), `mailbox.superseded`, `pipe.disconnected`, `stop` |
 
+## Step 4 — Revit updates a toposolid in place (from the SendTool; Civil 3D not needed)
+
+Setup: **restart Revit** (it loads the new build). New project from the **metric** architectural template, then save it as `testdata\site.rvt`. `SendTool` means `dotnet run --project tools\LiveSync.SendTool --` (it sends `payloads\eg.json`: EG with 307 vertices, extent E 383000–383085, N 5776000–5776080).
+
+Reference points (Civil, m) for the spot checks: **NE corner E 383085 N 5776080 → 502.992**; **W edge E 383000 N 5776040 → 500.047**; **interior E 383005 N 5776005 → 500.802**.
+
+| # | Do | Expect |
+|---|---|---|
+| 4.1 | `SendTool` | ack `error (mapping 'eg' has no linked toposolid; …)`, because nothing is linked yet |
+| 4.2 | Select nothing → LiveSync → **Link Toposolid** | Dialog "The surface is far from this project's origin … ~5,788 km" → **Yes**. Then `Toposolid <id> linked to 'eg'`. A toposolid appears near the project origin |
+| 4.3 | In a 3D view, place **Spot Elevations** on the toposolid at the 3 reference points (snap to the vertices) | 502.992 / 500.047 / 500.802 (to the mm). If the spot elevation's origin is the Project Base Point, it's the same value here, because elevation was set to 0. **Write down what you get**, especially if it's off |
+| 4.4 | Select the toposolid. Note its **ElementId** (Manage → IDs of Selection) | — |
+| 4.5 | `SendTool --dz 2` | ack `applied … N pts applied`. The toposolid rises 2 m, with the same shape. The spot elevations update to 504.992 / 502.047 / 502.802 |
+| 4.6 | Check the ElementId and the type/material | Same ElementId as 4.4; type unchanged |
+| 4.7 | Undo (Ctrl+Z) once | The undo list's top entry is `LiveSync: EG v…`, and one undo puts the toposolid back exactly to 4.3 |
+| 4.8 | `SendTool --dz 2` again | applied again (not skipped: Undo resets the "already applied" memory) |
+| 4.9 | `SendTool --dz 1 --repeat 5 --interval 0` (5 versions back to back, each 1 m higher) | Some acks `stale (superseded …)`. The **last** one is `applied`, and the toposolid ends at +5 m (507.992 at the NE corner) |
+| 4.10 | `SendTool` (original, 4.3 heights) while you're **inside a command** in Revit (e.g. Wall tool active, mid-placement) | No change until you finish/Esc the command. Then it applies by itself. SendTool gives up after 30 s; that's fine, just check that Revit applied it |
+| 4.11 | Select the EG toposolid → **Link Toposolid** | `Toposolid <same id> linked to 'eg'. Applying eg v… to it now.` One `applied` line appears in the log, and nothing moves (same surface). This is the link-existing path |
+| 4.12 | Hide the EG toposolid. `SendTool --synthetic 150 --bump` (22,500 pts, mapping `synthetic`; ack `error … no linked toposolid` is expected) → select nothing → **Link Toposolid** → `SendTool --synthetic 150 --dz 1` | A 149 × 149 m rolling toposolid is created (overlapping EG's area, hence hiding EG), then rises 1 m. Note the ack round trip: this is the first big-surface timing |
+| 4.13 | Send me `logs\revit-<today>.jsonl` (or just tell me "done") | Stages `link`, `created`, `applied` with `addZDeltaMaxMm`, `cornerZDeltaMaxMm`, `applyMs`, `frameInverted` |
+
+*What 4.3/4.5 check:* the API docs don't say whether `AddPoints` Z is absolute, or what the vertex offset in `ModifySubElement` is measured from. The add-in reads back what Revit stored and logs the difference (`addZDeltaMaxMm`, `cornerZDeltaMaxMm`; 0 means correct), and your spot elevations confirm it visually.
+
 ## Results
 
 | Date | Test | Result | Notes |
@@ -98,3 +122,5 @@ Setup: close Revit (or leave it open; see SETUP §6) → `dotnet build src\Revit
 | 2026-10-11 | 2.x | ✅ | non-geometric surface modifications produce `unchanged:true` extractions (hash skip works) |
 | 2026-10-11 | 2.7 | ⏳ | hide boundary not tried (all runs show `holes:0`) |
 | 2026-10-11 | 3 (dev) | ✅ | without Revit: the real `Receiver` in a console host + SendTool. eg.json 17.9 KB: round trip 50 ms cold / 1.5–5 ms warm; same version ×3 → `stale`; `--bump` ×5 → 5 `Replaced`; 40k-pt synthetic (2.6 MB) decode 65 ms, round trip 73 ms; ping/pong; no server → exit 1. 38 unit tests incl. real-pipe round trip and second-server `busy` |
+| 2026-10-11 | 3.1–3.7 | ✅ | in Revit 27.2.0.39 (from the log): listening at start; eg.json decode 0.4–15 ms, pipe transit 0.6–13 ms; same version ×3 → `Stale`; `--bump` ×5 → each `Replaced` the previous; 90k-pt synthetic (6.0 MB) ×5 decode 52–79 ms, transit 56–86 ms, every one superseding the last; ping 16 ms. User reported done |
+| 2026-10-11 | 3.8–3.9 | ⏳ | not in the log: no second-session `pipe.busy`, no `stop` |
