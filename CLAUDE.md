@@ -7,6 +7,7 @@ Project notes for future Claude Code sessions. Read `docs/PLAN.md` first; record
 - Revit **2027** (27.2) only. Toposolid API is available; there's no need for the TopographySurface fallback.
 - Both hosts run **.NET 10**, so target `net10.0-windows`. The SDK is 10.0.303.
 - Revit MCP: `C:\Users\bhavs\source\repos\mcp-servers-for-revit`, local branch `revit2027`. Don't change its behaviour without asking the user.
+- Civil 3D MCP (the user's own, Python + pywin32): `..\Jarvis\civil3d_bridge.py` (the logic), wrapped by `..\Jarvis\civil3d_mcp_server.py` (FastMCP) and `..\Jarvis\jarvis\mcp\servers\cad\server.py` (Jarvis). It isn't part of the sync loop; it's a candidate for Phase 2+ AI tools. Civil 3D 2027's COM ProgID is `AeccXUiLand.AeccApplication.13.9` (the only one registered). AutoCAD 2027 is `AutoCAD.Application.26`.
 
 ## API lookup (don't guess)
 - Revit: the XML docs ship in the NuGet package: `~/.nuget/packages/nice3point.revit.api.revitapi/2027.*/ref/net10.0-windows7.0/RevitAPI.xml`. Grep `member name="M:Autodesk.Revit.DB.<Type>.<Member>`.
