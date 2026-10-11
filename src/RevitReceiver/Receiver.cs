@@ -125,6 +125,7 @@ public sealed class Receiver : IDisposable
 
         if (Applied.TryGetValue(u.MappingId, out var done) && u.Version <= done.Version)
         {
+            Log.Write("apply.stale", new { mappingId = u.MappingId, version = u.Version, appliedVersion = done.Version });
             _ = r.Connection.SendAsync(MakeAck(u, AckStatus.Stale, $"v{done.Version} already applied"));
             return;
         }

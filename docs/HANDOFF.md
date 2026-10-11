@@ -66,7 +66,7 @@ An Engineering Design & Drafting Technology student (Saskatchewan Polytechnic) w
 | 1 | `src/Civil3dPlugin`: `LSLINK`, `LSUNLINK`, `LSSTATUS`, `LSRELOAD`, `LSDEBUG`; debounced detection | ✅ user tested 1.1–1.12: one change line per command, ~750–850 ms quiet, waits for command end |
 | 2 | Extraction (visible triangles, breakline densify, boundary loop), background payload build, hash, `LSSYNC`, payload → `payloads\<id>.json` | ✅ user tested 2026-10-11 (verified from logs): 306/544 + 132 breakline pts, boundary 66; undo and raise/lower restore the exact original hash; warm read ~1.7 ms + prep ~0.5 ms. 1.11/1.12 also done. Only 2.7 (hide boundary) not tried |
 | 3 | Revit receiver add-in (`src/RevitReceiver`), `PipeServer` + `LatestWinsMailbox` in Shared, `tools/LiveSync.SendTool` | ✅ user tested 3.1–3.7 in Revit (verified from the log; 6 MB payloads decode in 52–79 ms off the UI thread). 3.8 (second Revit busy) / 3.9 not done |
-| 4 | ExternalEvent apply (`ApplyHandler`, `ToposolidUpdater`), `CoordinateFrame`, Link Toposolid (link selected / create from payload + set shared coords), undo-aware applied memory, SendTool `--dz` | 🧪 **built, NOT yet tested in Revit** (`docs/TESTING.md` step 4, 4.1–4.13) |
+| 4 | ExternalEvent apply (`ApplyHandler`, `ToposolidUpdater`), `CoordinateFrame`, Link Toposolid, undo-aware applied memory, SendTool `--dz` | 🧪 user tested 2026-10-11: in-place apply works (same ElementId, 45–106 ms, AddPoints Z absolute, GetTotalTransform = shared→internal). **Corner heights weren't set (`corners: 0`)**; fixed with `Regenerate()` after `Enable()`, **needs re-test**. Link duplicate-create guard added |
 | 5 | Civil pipe client + acks + end-to-end latency logging | planned |
 | 6 | Coordinates/units, mapping on the Revit side, sketch rewrite (`SketchEditScope`) | planned |
 | 7 | Decimation, force-sync buttons, reconnect robustness, SETUP from a clean machine, large-surface timings | planned |
@@ -75,10 +75,7 @@ Git log (repo): `ec88a44` plan → `4298a55` MCP note → `df55844` step 0 → `
 
 ## 7. Next action
 
-1. **Get the step 4 results** (TESTING 4.1–4.13). Read `logs\revit-*.jsonl` (stages `link`, `created`, `applied`, `apply.failed`) and record them in TESTING. Key questions:
-   - Are `addZDeltaMaxMm` and `cornerZDeltaMaxMm` ≈ 0, and do the user's spot elevations match 502.992 / 500.047 / 500.802? If not, the Z semantics of `AddPoints` / `ModifySubElement` differ from the assumption (absolute Z; corner offset relative to the reset flat top). Fix `ToposolidUpdater` from the measured delta.
-   - Does `Toposolid.Create` accept points on the sketch edge (no `create.failed` / fallback)?
-   - What are `frameInverted` and `applyMs` for 307 and 22,500 points?
+1. **Re-test step 4's corner fix.** Restart Revit, delete the extra toposolids (keep the linked one, see `mapping.json` elementId), run `SendTool --dz 2`, then check the `applied` log line: `corners` > 0, `cornersSet` = `corners`, and `cornerZDeltaMaxMm` ≈ 0. Spot-check the edge, NE corner 502.992 + 2. If corners are still 0, probe with the Revit MCP `send_code_to_revit` (the user must switch on *Revit MCP Switch*): Reset → Enable → Regenerate → count vertices, in a rolled-back transaction.
 2. **Build step 5:** a `PipeClient` in Shared (background thread, reconnects every 2 s, `CurrentUserOnly`, `Framing`). The Civil `SyncController` sends each built payload (not only writing the file) with `Timing.SentUtc`, reads acks and logs `ack` with `editToCommitMs`. It prints `LiveSync EG v…: N pts, applied in Revit X.XX s after edit` on the command line. Skip the send when the hash equals the last **acked** hash. Civil `LSSTATUS` shows the pipe state.
 3. Then steps 6 (mapping offset/rotation, sketch rewrite via `SketchEditScope` when the boundary changes; Link is already done) and 7 per `docs/PLAN.md` §4.
 

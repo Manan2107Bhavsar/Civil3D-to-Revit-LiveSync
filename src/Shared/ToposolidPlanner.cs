@@ -136,8 +136,9 @@ public static class ToposolidPlanner
         for (int i = 0; i < xyz.Length / 3; i++)
         {
             double x = xyz[3 * i], y = xyz[3 * i + 1];
-            if (!region.Contains(x, y)) { outside++; continue; }
+            // Edge first: a point on the boundary is "inside" or "outside" by float noise; either way it's an edge point.
             if (region.DistanceToEdge(x, y) <= edgeTol) { nearEdge++; continue; }
+            if (!region.Contains(x, y)) { outside++; continue; }
             if (!filter.TryAdd(x, y))
             {
                 if (existing.IsNear(x, y)) nearExisting++; else duplicate++;

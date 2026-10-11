@@ -61,9 +61,14 @@ public static class ToposolidUpdater
             var editor = topo.GetSlabShapeEditor();
             editor.ResetSlabShape(); // also disables the editor
             editor.Enable();
-            // After a reset, the only vertices are the sketch's own (corners), at the flat top.
+            // Step 4 test: without a regenerate here SlabShapeVertices came back empty (corners: 0),
+            // so the edge heights were never set. After a reset + regenerate, the only vertices
+            // should be the sketch's own (corners), at the flat top.
+            doc.Regenerate();
+            editor = topo.GetSlabShapeEditor();
             var corners = editor.SlabShapeVertices.Cast<SlabShapeVertex>().Select(v => v.Position).ToList();
             r.Corners = corners.Count;
+            if (corners.Count == 0) r.Warnings.Add("no sketch vertices exposed after reset + regenerate; edge heights not set");
             r.ResetMs = Lap(sw);
 
             var plan = ToposolidPlanner.Plan(all, region, EdgeTolFt, DedupeFt, corners.Select(c => (c.X, c.Y)));

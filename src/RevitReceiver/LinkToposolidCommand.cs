@@ -51,6 +51,19 @@ public sealed class LinkToposolidCommand : IExternalCommand
                 TaskDialog.Show("LiveSync", $"Nothing selected and no payload for '{mappingId}' has been received in this Revit session, so there's nothing to create from. Send one, or select an existing toposolid.");
                 return Result.Cancelled;
             }
+            // Guard: in the step 4 test, repeated clicks created 4 overlapping toposolids.
+            if (rx.Config.Find(mappingId)?.Revit.ToposolidUniqueId is { } uid && doc.GetElement(uid) is Toposolid existing)
+            {
+                var ask = new TaskDialog("LiveSync")
+                {
+                    MainInstruction = $"'{mappingId}' is already linked to toposolid {existing.Id.Value}",
+                    MainContent = "Create another toposolid and move the link to it? The old one stays in the model, unlinked.\n\n"
+                                  + "To re-link the existing one instead, select it and click Link Toposolid.",
+                    CommonButtons = TaskDialogCommonButtons.Yes | TaskDialogCommonButtons.No,
+                    DefaultButton = TaskDialogResult.No,
+                };
+                if (ask.Show() != TaskDialogResult.Yes) return Result.Cancelled;
+            }
             var created = CreateFromPayload(doc, payload, rx);
             if (created is null) return Result.Cancelled;
             topo = created;
