@@ -1,0 +1,8 @@
+logs/
+bin/
+obj/
+*.user
+.vs/
+*.bak
+*.dwl
+*.dwl2
