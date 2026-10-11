@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+### Step 5 results + fixes — 2026-10-11
+- Step 5 passed live: edit → Revit commit 1.3–2.7 s, ≈ 0.85 s after the Civil command ends; Revit apply 69–130 ms.
+- Fix: deep pit (point 200 m below the rest) made `AddPoints` throw on an older toposolid. AddPoints now runs in a SubTransaction; on failure the flat top (`Height Offset From Level`) is lowered to the lowest target and it retries once. The log has `flatTopFt`, `thicknessFt`, `minTargetFt`, `maxTargetFt`, `baseLoweredFt`, `firstAddError`; the error names the Civil point.
+- Fix: a parked payload older than the applied version is no longer applied when a project opens (stale check in the apply handler; a successful apply clears an older parked one).
+
 ### Step 5 — 2026-10-11
 - Shared: `PipeClient` (background connect loop, retries every 2 s, `CurrentUserOnly`, logs only state changes), `PipeServer.BroadcastAsync`, `SurfaceUpdate.Force` (additive). +3 tests (48), including reconnect after a server restart.
 - Civil 3D sends each built payload to Revit. Skips it when Revit has acked that hash or it's in flight. On (re)connect, it sends the newest unacked payload.

@@ -51,6 +51,14 @@ public sealed class ApplyHandler(Receiver rx) : IExternalEventHandler
             return;
         }
 
+        // A parked payload can be older than what was applied since (e.g. after Link Toposolid).
+        if (!p.Force && rx.Applied.TryGetValue(u.MappingId, out var newer) && u.Version < newer.Version)
+        {
+            rx.Log.Write("apply.stale", new { mappingId = u.MappingId, version = u.Version, appliedVersion = newer.Version });
+            Reply(p, AckStatus.Stale, $"v{newer.Version} already applied");
+            return;
+        }
+
         if (!p.Force && rx.Applied.TryGetValue(u.MappingId, out var last) && last.Hash == u.Hash)
         {
             rx.Applied[u.MappingId] = last with { Version = u.Version };
@@ -78,6 +86,12 @@ public sealed class ApplyHandler(Receiver rx) : IExternalEventHandler
             result.OnCorner,
             result.Corners,
             result.CornersSet,
+            flatTopFt = R(result.FlatTopFt),
+            thicknessFt = R(result.ThicknessFt),
+            minTargetFt = R(result.MinTargetFt),
+            maxTargetFt = R(result.MaxTargetFt),
+            baseLoweredFt = R(result.BaseLoweredFt),
+            result.FirstAddError,
             addZDeltaMaxMm = Math.Round(result.AddZDeltaMaxFt * 304.8, 3),
             cornerZDeltaMaxMm = Math.Round(result.CornerZDeltaMaxFt * 304.8, 3),
             result.ResetMs,
@@ -98,6 +112,8 @@ public sealed class ApplyHandler(Receiver rx) : IExternalEventHandler
         if (result.Ok)
         {
             rx.Applied[u.MappingId] = new AppliedState(u.Version, u.Hash, u.Timing.CommittedUtc!.Value, result);
+            if (rx.Parked.TryGetValue(u.MappingId, out var parked) && parked.Update.Version <= u.Version)
+                rx.Parked.TryRemove(u.MappingId, out _);
             Reply(p, AckStatus.Applied, result.Outside + result.NearEdge > 0
                 ? $"{result.Outside} outside + {result.NearEdge} on the edge not added" : null, result);
         }
@@ -126,5 +142,6 @@ public sealed class ApplyHandler(Receiver rx) : IExternalEventHandler
     private static void Reply(Pending p, string status, string? detail, ApplyResult? result = null) =>
         _ = p.Connection?.SendAsync(Receiver.MakeAck(p.Update, status, detail, result));
 
+    private static double? R(double? v) => v is { } d ? Math.Round(d, 3) : null;
     private static double? Ms(TimeSpan? t) => t is { } v ? Math.Round(v.TotalMilliseconds, 1) : null;
 }

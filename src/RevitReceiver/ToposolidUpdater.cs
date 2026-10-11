@@ -23,6 +23,14 @@ public sealed class ApplyResult
     public double AddMs { get; set; }
     public double CornersMs { get; set; }
     public double CommitMs { get; set; }
+    /// <summary>Flat top after reset (ft, internal), and the range of heights asked for.</summary>
+    public double? FlatTopFt { get; set; }
+    public double? ThicknessFt { get; set; }
+    public double? MinTargetFt { get; set; }
+    public double? MaxTargetFt { get; set; }
+    /// <summary>Set when AddPoints failed and the flat top was lowered by this much before the retry.</summary>
+    public double? BaseLoweredFt { get; set; }
+    public string? FirstAddError { get; set; }
     public List<string> Warnings { get; } = [];
 }
 
@@ -69,6 +77,8 @@ public static class ToposolidUpdater
             var corners = editor.SlabShapeVertices.Cast<SlabShapeVertex>().Select(v => v.Position).ToList();
             r.Corners = corners.Count;
             if (corners.Count == 0) r.Warnings.Add("no sketch vertices exposed after reset + regenerate; edge heights not set");
+            r.FlatTopFt = corners.Count > 0 ? corners.Min(c => c.Z) : null;
+            r.ThicknessFt = topo.get_Parameter(BuiltInParameter.TOPOSOLID_ATTR_THICKNESS_PARAM)?.AsDouble();
             r.ResetMs = Lap(sw);
 
             var plan = ToposolidPlanner.Plan(all, region, EdgeTolFt, DedupeFt, corners.Select(c => (c.X, c.Y)));
@@ -78,9 +88,46 @@ public static class ToposolidUpdater
             r.OnCorner = plan.NearExisting;
 
             var points = plan.Interior.Select(i => new XYZ(all[3 * i], all[3 * i + 1], all[3 * i + 2])).ToList();
+            var targetZ = points.Select(p => p.Z)
+                .Concat(corners.Select(c => tin.ZAt(c.X, c.Y)).OfType<double>()).ToList();
+            if (targetZ.Count > 0) { r.MinTargetFt = targetZ.Min(); r.MaxTargetFt = targetZ.Max(); }
+
             if (points.Count > 0)
             {
-                var added = editor.AddPoints(points);
+                IList<SlabShapeVertex> added;
+                try
+                {
+                    added = AddPointsAtomic(doc, editor, points);
+                }
+                catch (Exception ex) when (r.FlatTopFt is { } flat && r.MinTargetFt is { } low && low < flat - 0.01)
+                {
+                    // Step 5 test: a pit 200 m below the rest of the surface threw "Could not add point"
+                    // on a toposolid made before the pit existed, while one created with the pit
+                    // accepted the same point. The docs give no rule, so: on failure, lower the flat
+                    // top (Height Offset From Level) to the lowest target and try once more.
+                    r.FirstAddError = Describe(ex, plan, u);
+                    var offset = topo.get_Parameter(BuiltInParameter.TOPOSOLID_HEIGHTABOVELEVEL_PARAM);
+                    if (offset is null || offset.IsReadOnly) throw new InvalidOperationException(r.FirstAddError, ex);
+                    r.BaseLoweredFt = flat - low;
+                    offset.Set(offset.AsDouble() - r.BaseLoweredFt.Value);
+                    doc.Regenerate();
+                    editor = topo.GetSlabShapeEditor();
+                    if (!editor.IsEnabled) { editor.Enable(); doc.Regenerate(); editor = topo.GetSlabShapeEditor(); }
+                    corners = editor.SlabShapeVertices.Cast<SlabShapeVertex>().Select(v => v.Position).ToList();
+                    r.Corners = corners.Count;
+                    try
+                    {
+                        added = AddPointsAtomic(doc, editor, points);
+                    }
+                    catch (Exception ex2)
+                    {
+                        throw new InvalidOperationException(Describe(ex2, plan, u) + " (also after lowering the toposolid base)", ex2);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    throw new InvalidOperationException(Describe(ex, plan, u), ex);
+                }
                 r.PointsApplied = added.Count;
                 // Diagnostic: does Revit store the Z we sent (absolute), or treat it as something else?
                 // Matched by XY because the returned order isn't documented.
@@ -125,7 +172,7 @@ public static class ToposolidUpdater
         catch (Exception ex)
         {
             if (tx.HasStarted() && !tx.HasEnded()) tx.RollBack();
-            r.Error = ex.GetType().Name + ": " + ex.Message;
+            r.Error = ex is InvalidOperationException { InnerException: { } } ? ex.Message : ex.GetType().Name + ": " + ex.Message;
             r.Warnings.AddRange(failures.Messages);
             return r;
         }
@@ -188,6 +235,37 @@ public static class ToposolidUpdater
             loops.Add([.. loop]);
         }
         return new PlanarRegion(loops);
+    }
+
+    /// <summary>AddPoints in a sub-transaction, so a throw part-way leaves no half-added points behind.</summary>
+    private static IList<SlabShapeVertex> AddPointsAtomic(Document doc, SlabShapeEditor editor, IList<XYZ> points)
+    {
+        using var sub = new SubTransaction(doc);
+        sub.Start();
+        try
+        {
+            var added = editor.AddPoints(points);
+            sub.Commit();
+            return added;
+        }
+        catch
+        {
+            if (sub.HasStarted() && !sub.HasEnded()) sub.RollBack();
+            throw;
+        }
+    }
+
+    /// <summary>Revit's message names the point in internal feet; add the Civil point it came from.</summary>
+    private static string Describe(Exception ex, PointPlan plan, SurfaceUpdate u)
+    {
+        string msg = ex.GetType().Name + ": " + ex.Message;
+        var m = System.Text.RegularExpressions.Regex.Match(ex.Message, @"at index (\d+)");
+        if (!m.Success || !int.TryParse(m.Groups[1].Value, out int k) || k >= plan.Interior.Count) return msg;
+        int i = plan.Interior[k];
+        int nv = u.Vertices.Length / 3;
+        var (src, j) = i < nv ? (u.Vertices, i) : (u.ExtraPoints, i - nv);
+        return msg + $" Civil point: X {src[3 * j]:F3}, Y {src[3 * j + 1]:F3}, elevation {src[3 * j + 2]:F3} {u.Units}"
+                   + (i < nv ? "" : " (breakline)");
     }
 
     private static (long, long) Key(XYZ p) => ((long)Math.Round(p.X * 1000), (long)Math.Round(p.Y * 1000));

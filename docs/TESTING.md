@@ -123,6 +123,7 @@ Arrange both windows side by side, with Revit in a 3D view of the toposolid.
 | 5.10 | Revit → LiveSync → **Force Sync** | Revit: "Asked Civil 3D for a fresh surface". Civil: `Force Sync requested by Revit.` then `applied …` |
 | 5.11 | Civil: `LSSTATUS` | `last Revit reply: v… applied, x.xx s after edit` |
 | 5.12 | Tell me "done" | I read both logs and record the edit→Revit latency (debounce 750 ms + extraction + pipe + Revit) |
+| 5.13 | Re-test of the deep-pit fix. (a) Civil: set the spike points (300 / 400 / 510 / 520 / 600 m) back to ≈ 500 m; wait for `applied`. (b) Revit: delete the linked toposolid → LiveSync → Link Toposolid with nothing selected (creates a fresh one **without** the pit, like 3021 was). (c) Civil: set one point to **300 m** | Revit applies it (no error). Civil: `applied …`. The Revit log line has `baseLoweredFt` ≈ 656 (200 m) if the retry was needed, and `flatTopFt`/`minTargetFt` either way |
 
 ## Results
 
@@ -154,3 +155,11 @@ Arrange both windows side by side, with Revit in a 3D view of the toposolid.
 | 2026-10-11 | 4.5 bug | ❌→fix | `corners: 0`: `SlabShapeVertices` was empty right after `ResetSlabShape`+`Enable`, so the edge heights were never set (edges likely flat). Fix: `doc.Regenerate()` after `Enable`. **Needs re-test** |
 | 2026-10-11 | 4.3, 4.9–4.12 | ⏳ | spot elevations not reported; others skipped by the user |
 | 2026-10-11 | 4.5 re-test | ✅ | after `Regenerate()`: `corners: 66, cornersSet: 66, cornerZDeltaMaxMm: 0`; 373 interior + 66 edge, 0 outside. The vertex offset in `ModifySubElement` is relative to the reset flat top (as assumed). Apply 102–257 ms. Relink of the existing toposolid (3021) applied too |
+| 2026-10-11 | 5.1–5.3 | ✅ | Civil connected 1 ms after start (Revit already listening). LSSYNC (forced) → applied on 3021, 373 + 66 corners, `cornerZDeltaMaxMm: 0`; first apply 528 ms (cold), send→commit 558 ms |
+| 2026-10-11 | 5.4 | ✅ | User: "impressed with how it works". AECCEDITSURFACEPOINT edits → **edit→commit 1.31–2.02 s**. Breakdown: still in the command + 750 ms quiet = 1.2–1.9 s; extract 2–3 ms; pipe 0.4–0.7 ms; Revit wait 2–9 ms; Revit apply 69–130 ms. **From the moment the command ends, Revit has it in ≈ 0.85 s**; the rest is the user finishing the command |
+| 2026-10-11 | 5.5 | ✅ | AECCADDSURFACEPOINT, 2 events in one command → one send after the command ended (309 / 550), edit→commit 2.73 s, Revit 72 ms |
+| 2026-10-11 | 5.x | ✅ | edits that didn't change the geometry (`unchanged:true`, hash already acked) were **not** sent |
+| 2026-10-11 | 5.10 | ✅ | Force Sync → `resync.request` → Civil extracted with `force` → applied even though unchanged. `revitWaitMs` 3.7–4.4 s = the time the "Asked Civil 3D…" dialog stayed open (the API thread can't apply under a modal dialog) |
+| 2026-10-11 | 5.4 bug | ❌→fix | a point edited to **300 m** (rest of EG ≈ 500 m; also 400 / 510 / 520 / 600 m spikes) → `AddPoints` threw `InvalidOperationException: Could not add point … at index 105` on 3021 (created in step 4 without the pit). The transaction rolled back cleanly (toposolid kept its previous shape, error ack, Civil kept resending). Toposolid 3204, **created** from a payload already containing the 300 m point, accepted every later apply with the same pit. Not in the docs → fix: AddPoints now runs in a SubTransaction; on failure, the flat top (`Height Offset From Level`) is lowered to the lowest target and it retries once; flat top, thickness, target range and `baseLoweredFt` are logged; the error names the Civil point. **Needs re-test** |
+| 2026-10-11 | 5.x bug | fix | a payload parked at 23:47:51 (3021 deleted) stayed parked after 3204 was linked; on the next project open it would have re-applied an **older** surface. Fix: apply skips (stale) a non-forced payload older than the applied version, and a successful apply clears an older parked one |
+| 2026-10-11 | 5.6–5.9, 5.11 | ⏳ | not in the log (no Revit restart, no undo-only round trip). Optional |
