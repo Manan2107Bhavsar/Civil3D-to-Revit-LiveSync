@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+### Step 5 — 2026-10-11
+- Shared: `PipeClient` (background connect loop, retries every 2 s, `CurrentUserOnly`, logs only state changes), `PipeServer.BroadcastAsync`, `SurfaceUpdate.Force` (additive). +3 tests (48), including reconnect after a server restart.
+- Civil 3D sends each built payload to Revit. Skips it when Revit has acked that hash or it's in flight. On (re)connect, it sends the newest unacked payload.
+- Acks are logged (`editToCommitMs`, `sentToCommitMs`, `revitWaitMs`, `revitApplyMs`, `pipeMs`), and the command line shows `applied in Revit X.XX s after edit`. `LSSTATUS` shows the pipe state and the last reply.
+- Force Sync (pulled in from step 7): Revit's button broadcasts `resync.request`, and Civil extracts on its main thread and sends with `force`. Without Civil 3D, Revit re-applies the last payload.
+- Revit parks a payload whose toposolid isn't open yet and applies it when a project opens (`DocumentOpened`).
+- Fixes from the step 4 test: `Regenerate()` after `Enable()` (corner heights); Link asks before creating a second toposolid; boundary points are counted as edge, not outside; `waitMs` not logged for local re-applies.
+
 ### Step 4 — 2026-10-11
 - Revit: an `ExternalEvent` (`ApplyHandler`) drains the latest-wins mailbox on the API thread. Per mapping, `ToposolidUpdater.Apply` runs one Transaction `LiveSync: <surface> v<N>`:
   - `ResetSlabShape` → `Enable` → `AddPoints` (only points strictly inside the sketch and distinct in XY);

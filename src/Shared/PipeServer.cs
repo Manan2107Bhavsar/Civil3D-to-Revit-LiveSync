@@ -173,6 +173,15 @@ public sealed class PipeServer : IDisposable
         }
     }
 
+    /// <summary>Sends to every connected client; returns how many accepted it.</summary>
+    public async Task<int> BroadcastAsync(Message message)
+    {
+        PipeConnection[] clients;
+        lock (_clients) clients = [.. _clients];
+        var results = await Task.WhenAll(clients.Select(c => c.SendAsync(message))).ConfigureAwait(false);
+        return results.Count(ok => ok);
+    }
+
     private static async Task<bool> DelayOrStop(int ms, CancellationToken ct)
     {
         try { await Task.Delay(ms, ct).ConfigureAwait(false); return true; }

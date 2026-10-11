@@ -63,7 +63,25 @@ public sealed class ForceSyncCommand : IExternalCommand
 {
     public Result Execute(ExternalCommandData commandData, ref string message, ElementSet elements)
     {
-        TaskDialog.Show("LiveSync", "Force Sync is not built yet (step 7).");
+        var rx = App.Current;
+        if (rx is null) return Result.Cancelled;
+
+        // Civil 3D connected: ask it to extract and send a fresh payload (applied even if unchanged).
+        if (rx.Server.ClientCount > 0)
+        {
+            int n = rx.Server.BroadcastAsync(new ResyncRequest()).GetAwaiter().GetResult();
+            rx.Log.Write("resync.sent", new { clients = n });
+            TaskDialog.Show("LiveSync", $"Asked Civil 3D for a fresh surface ({n} client(s)). It applies as soon as Civil 3D is idle.");
+            return Result.Succeeded;
+        }
+
+        // Otherwise re-apply the last payload received for each linked mapping.
+        var linked = rx.LatestPayload.Values.Where(u => rx.Config.Find(u.MappingId)?.Revit.ToposolidUniqueId is not null).ToList();
+        foreach (var u in linked) rx.Enqueue(new Pending(u, null, Force: true));
+        rx.Log.Write("resync.local", new { mappings = linked.Select(u => u.MappingId) });
+        TaskDialog.Show("LiveSync", linked.Count > 0
+            ? $"Civil 3D isn't connected. Re-applying the last surface received: {string.Join(", ", linked.Select(u => $"{u.MappingId} v{u.Version}"))}."
+            : "Civil 3D isn't connected and no surface has been received in this Revit session.");
         return Result.Succeeded;
     }
 }

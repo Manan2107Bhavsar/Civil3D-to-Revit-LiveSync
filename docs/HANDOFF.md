@@ -1,6 +1,6 @@
 # Session handoff — Civil 3D → Revit Live Surface Sync
 
-Last updated: **2026-10-11**, session 2 (steps 2–3 verified, step 4 built). A new session should read this first, then `CLAUDE.md`, then `docs/PLAN.md`.
+Last updated: **2026-10-11**, session 2 (steps 2–4 verified, step 5 built). A new session should read this first, then `CLAUDE.md`, then `docs/PLAN.md`.
 
 **Resume prompt for a new session:**
 > Read `docs/HANDOFF.md`, `CLAUDE.md` and `docs/PLAN.md` in `C:\Users\bhavs\OneDrive - Saskatchewan Polytechnic\Civil3D_to_Revit`. Continue from "Next action".
@@ -66,18 +66,20 @@ An Engineering Design & Drafting Technology student (Saskatchewan Polytechnic) w
 | 1 | `src/Civil3dPlugin`: `LSLINK`, `LSUNLINK`, `LSSTATUS`, `LSRELOAD`, `LSDEBUG`; debounced detection | ✅ user tested 1.1–1.12: one change line per command, ~750–850 ms quiet, waits for command end |
 | 2 | Extraction (visible triangles, breakline densify, boundary loop), background payload build, hash, `LSSYNC`, payload → `payloads\<id>.json` | ✅ user tested 2026-10-11 (verified from logs): 306/544 + 132 breakline pts, boundary 66; undo and raise/lower restore the exact original hash; warm read ~1.7 ms + prep ~0.5 ms. 1.11/1.12 also done. Only 2.7 (hide boundary) not tried |
 | 3 | Revit receiver add-in (`src/RevitReceiver`), `PipeServer` + `LatestWinsMailbox` in Shared, `tools/LiveSync.SendTool` | ✅ user tested 3.1–3.7 in Revit (verified from the log; 6 MB payloads decode in 52–79 ms off the UI thread). 3.8 (second Revit busy) / 3.9 not done |
-| 4 | ExternalEvent apply (`ApplyHandler`, `ToposolidUpdater`), `CoordinateFrame`, Link Toposolid, undo-aware applied memory, SendTool `--dz` | 🧪 user tested 2026-10-11: in-place apply works (same ElementId, 45–106 ms, AddPoints Z absolute, GetTotalTransform = shared→internal). **Corner heights weren't set (`corners: 0`)**; fixed with `Regenerate()` after `Enable()`, **needs re-test**. Link duplicate-create guard added |
-| 5 | Civil pipe client + acks + end-to-end latency logging | planned |
+| 4 | ExternalEvent apply, `CoordinateFrame`, Link Toposolid, undo-aware memory, SendTool `--dz` | ✅ user tested: in place, same ElementId; corner fix verified (66/66, 0 mm); AddPoints Z absolute; GetTotalTransform = shared→internal; apply 45–257 ms |
+| 5 | `PipeClient`, Civil sends + ack handling + latency line, Force Sync both sides, Revit parking until the project opens | 🧪 **built, NOT yet tested** (`docs/TESTING.md` step 5, 5.1–5.12) |
 | 6 | Coordinates/units, mapping on the Revit side, sketch rewrite (`SketchEditScope`) | planned |
 | 7 | Decimation, force-sync buttons, reconnect robustness, SETUP from a clean machine, large-surface timings | planned |
 
-Git log (repo): `ec88a44` plan → `4298a55` MCP note → `df55844` step 0 → `9b2c799` step 1 → `9c46942` step 1 results + hardening → `2f3440f` step 2 → `5b76213` handoff → `e73f150` step 3 → step 4 commit (2026-10-11). Tests: `dotnet test C3dRevitLiveSync.sln` → 45 passing.
+Git log (repo): `ec88a44` plan → `4298a55` MCP note → `df55844` step 0 → `9b2c799` step 1 → `9c46942` step 1 results + hardening → `2f3440f` step 2 → `5b76213` handoff → `e73f150` step 3 → `8190ba5` step 4 → `8bb0e57` step 4 fixes → step 5 commit (2026-10-11). Tests: `dotnet test C3dRevitLiveSync.sln` → 48 passing.
 
 ## 7. Next action
 
-1. **Re-test step 4's corner fix.** Restart Revit, delete the extra toposolids (keep the linked one, see `mapping.json` elementId), run `SendTool --dz 2`, then check the `applied` log line: `corners` > 0, `cornersSet` = `corners`, and `cornerZDeltaMaxMm` ≈ 0. Spot-check the edge, NE corner 502.992 + 2. If corners are still 0, probe with the Revit MCP `send_code_to_revit` (the user must switch on *Revit MCP Switch*): Reset → Enable → Regenerate → count vertices, in a rolled-back transaction.
-2. **Build step 5:** a `PipeClient` in Shared (background thread, reconnects every 2 s, `CurrentUserOnly`, `Framing`). The Civil `SyncController` sends each built payload (not only writing the file) with `Timing.SentUtc`, reads acks and logs `ack` with `editToCommitMs`. It prints `LiveSync EG v…: N pts, applied in Revit X.XX s after edit` on the command line. Skip the send when the hash equals the last **acked** hash. Civil `LSSTATUS` shows the pipe state.
-3. Then steps 6 (mapping offset/rotation, sketch rewrite via `SketchEditScope` when the boundary changes; Link is already done) and 7 per `docs/PLAN.md` §4.
+1. **Get the step 5 results** (TESTING 5.1–5.12). Read both logs: Civil `ack` lines (`editToCommitMs`, `revitWaitMs`, `revitApplyMs`, `pipeMs`) and Revit `applied`. Record the edit→Revit latency in TESTING. Expected about 1.0–1.3 s (750 ms debounce + extract ~2 ms + pipe ~10 ms + apply 50–250 ms).
+2. Then **step 6**. Link is already done. What's left:
+   - the mapping `transform` offset/rotation in `CoordinateFrame`;
+   - a sketch rewrite via `SketchEditScope` when the Civil boundary changes. Today, points outside the old sketch are dropped and reported as `outside`. Detect the change by comparing the payload boundary with the sketch loops; `SketchEditScope` has to start with no transaction open.
+3. Then step 7: decimation, reconnect robustness, SETUP from a clean machine, 10k–50k-point timings (Force Sync is already done).
 
 ## 8. Open / watch items
 

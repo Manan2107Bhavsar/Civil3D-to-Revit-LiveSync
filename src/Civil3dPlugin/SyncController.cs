@@ -2,6 +2,7 @@ using Autodesk.AutoCAD.ApplicationServices;
 using Autodesk.AutoCAD.DatabaseServices;
 using Autodesk.AutoCAD.Runtime;
 using LiveSync.Shared;
+using Message = LiveSync.Shared.Message;
 using AcApp = Autodesk.AutoCAD.ApplicationServices.Core.Application;
 using TinSurface = Autodesk.Civil.DatabaseServices.TinSurface;
 
@@ -33,6 +34,20 @@ internal sealed class MappingState(string mappingId)
     public Task Pipeline { get; set; } = Task.CompletedTask;
     /// <summary>Only read/written inside Pipeline continuations (serial).</summary>
     public string? LastHash { get; set; }
+
+    /// <summary>Guards Pipeline chaining (main thread and the pipe-connect callback both append).</summary>
+    public object Gate { get; } = new();
+
+    // Send state. Written from the pipeline and from the pipe thread (acks); references are atomic.
+    /// <summary>Newest payload built, kept so it can be (re)sent when Revit connects.</summary>
+    public volatile SurfaceUpdate? Latest;
+    /// <summary>Hash Revit confirmed it has (applied or already had). Equal hash = nothing to send.</summary>
+    public volatile string? LastAckedHash;
+    /// <summary>Hash sent and not yet answered; cleared on error or disconnect so it is resent.</summary>
+    public volatile string? LastSentHash;
+    public volatile Ack? LastAck;
+    /// <summary>Revit pressed Force Sync; handled by the timer on the main thread.</summary>
+    public volatile bool ForceRequested;
 }
 
 /// <summary>One edit burst, reported once the drawing has been quiet for DebounceMs and no command is running.</summary>
@@ -68,6 +83,7 @@ internal sealed class SyncController : IDisposable
     public MappingConfig Config { get; private set; }
     public JsonlLog Log { get; }
     public bool DebugEvents { get; set; }
+    public PipeClient? Client { get; private set; }
     public IReadOnlyCollection<MappingState> States => _states.Values;
 
     /// <summary>Messages from background threads, written to the command line by the timer (main thread).</summary>
@@ -83,6 +99,9 @@ internal sealed class SyncController : IDisposable
 
         Log.Write("start", new { sessionId = SessionId, configPath = LiveSyncPaths.ConfigPath, mappings = Config.Mappings.Count, Config.DebounceMs });
         AttachAll();
+
+        Client = new PipeClient(Config.PipeName, OnPipeMessage, Log, OnPipeConnection);
+        Client.Start();
     }
 
     /// <summary>Re-reads mapping.json and re-resolves every open drawing.</summary>
@@ -220,6 +239,14 @@ internal sealed class SyncController : IDisposable
 
     private void TickOne(MappingState s, DateTime now)
     {
+        if (s.ForceRequested && s.Attached && string.IsNullOrEmpty(s.Doc!.CommandInProgress))
+        {
+            s.ForceRequested = false;
+            Log.Write("sync.forced", new { mappingId = s.MappingId, by = "revit" });
+            Ui.Write($"LiveSync [{s.MappingId}]: Force Sync requested by Revit.");
+            Process(s, lastEditUtc: null, force: true);
+            return;
+        }
         if (!s.Dirty || s.Doc is null || s.LastEditUtc is null) return;
         if ((now - s.LastEditUtc.Value).TotalMilliseconds < Config.DebounceMs) return;
         if (s.SurfaceId.IsErased) { s.Dirty = false; return; }
@@ -273,7 +300,12 @@ internal sealed class SyncController : IDisposable
 
         long version = s.LastVersion = Math.Max(s.LastVersion + 1, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
         string dwg = doc.Name;
-        s.Pipeline = s.Pipeline.ContinueWith(_ => Prepare(s, snap, mapping, dwg, version, lastEditUtc, force), TaskScheduler.Default);
+        Chain(s, () => Prepare(s, snap, mapping, dwg, version, lastEditUtc, force));
+    }
+
+    private static void Chain(MappingState s, Action work)
+    {
+        lock (s.Gate) s.Pipeline = s.Pipeline.ContinueWith(_ => work(), TaskScheduler.Default);
     }
 
     private void Prepare(MappingState s, SurfaceSnapshot snap, Mapping mapping, string dwg, long version, DateTime? lastEditUtc, bool force)
@@ -282,8 +314,10 @@ internal sealed class SyncController : IDisposable
         {
             var r = PayloadBuilder.Build(snap, mapping, dwg, SessionId, version, lastEditUtc);
             var u = r.Update;
+            u.Force = force;
             bool unchanged = u.Hash == s.LastHash;
             s.LastHash = u.Hash;
+            s.Latest = u;
 
             string? file = null;
             if (!unchanged || force)
@@ -323,8 +357,9 @@ internal sealed class SyncController : IDisposable
                       (r.Boundary.Outers.Count > 1 || r.Boundary.Holes.Count > 0 ? $" ({r.Boundary.Outers.Count} outer, {r.Boundary.Holes.Count} holes; only the largest outer is used)" : "") +
                       $"; read {snap.ReadMs:0} ms, prep {r.PrepMs:0} ms; v{version} " +
                       (unchanged ? (force ? "UNCHANGED (written anyway)" : "UNCHANGED, skipped") : "") +
-                      (file is null ? "" : $"-> {file}");
+                      (force && file is not null ? $"-> {file}" : "");
             _uiMessages.Enqueue(msg);
+            Send(s, u, force);
         }
         catch (System.Exception ex)
         {
@@ -332,6 +367,104 @@ internal sealed class SyncController : IDisposable
             _uiMessages.Enqueue($"LiveSync [{mapping.Id}]: payload build failed: {ex.Message}");
         }
     }
+
+    // --- Pipe to Revit. Send runs on the mapping's pipeline thread; the callbacks on a pipe thread. ---
+
+    /// <summary>Sends unless Revit already has this surface (acked) or it's already on its way. Blocks the pipeline thread so sends stay in version order.</summary>
+    private void Send(MappingState s, SurfaceUpdate u, bool force)
+    {
+        if (!force && (u.Hash == s.LastAckedHash || u.Hash == s.LastSentHash)) return;
+        if (Client is null || !Client.IsConnected)
+        {
+            Log.Write("send.offline", new { mappingId = s.MappingId, version = u.Version });
+            _uiMessages.Enqueue($"LiveSync [{s.MappingId}]: Revit not connected; v{u.Version} will be sent when it connects.");
+            return;
+        }
+        u.Timing.SentUtc = DateTime.UtcNow;
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        bool ok = Client.SendAsync(u).GetAwaiter().GetResult();
+        Log.Write(ok ? "sent" : "send.failed", new { mappingId = s.MappingId, version = u.Version, sendMs = sw.Elapsed.TotalMilliseconds, force });
+        if (ok) s.LastSentHash = u.Hash;
+    }
+
+    private void OnPipeConnection(bool connected)
+    {
+        foreach (var s in _states.Values.ToList())
+        {
+            s.LastSentHash = null;
+            // Revit (re)started: it may have missed edits or lost its state. Send the newest unless it's acked.
+            if (connected && s.Latest is { } u && u.Hash != s.LastAckedHash)
+                Chain(s, () => Send(s, u, force: false));
+        }
+        _uiMessages.Enqueue(connected ? "LiveSync: connected to Revit." : "LiveSync: Revit disconnected; will reconnect.");
+    }
+
+    private void OnPipeMessage(Message m)
+    {
+        switch (m)
+        {
+            case Ack a:
+                OnAck(a);
+                break;
+            case ResyncRequest r:
+                var targets = _states.Values.Where(s => r.MappingId is null || string.Equals(s.MappingId, r.MappingId, StringComparison.OrdinalIgnoreCase)).ToList();
+                foreach (var s in targets) s.ForceRequested = true;
+                Log.Write("resync.request", new { mappingId = r.MappingId, mappings = targets.Count });
+                break;
+            case Ping:
+                break;
+            default:
+                Log.Write("pipe.unexpected", new { type = m.GetType().Name });
+                break;
+        }
+    }
+
+    private void OnAck(Ack a)
+    {
+        var s = _states.Values.FirstOrDefault(x => string.Equals(x.MappingId, a.MappingId, StringComparison.OrdinalIgnoreCase));
+        var t = a.Timing;
+        double? editToCommitMs = Ms(t.CommittedUtc - t.LastEditUtc);
+        double? sentToCommitMs = Ms(t.CommittedUtc - t.SentUtc);
+        double? revitApplyMs = Ms(t.CommittedUtc - t.EventStartUtc);
+        Log.Write("ack", new
+        {
+            mappingId = a.MappingId,
+            version = a.Version,
+            status = a.Status,
+            detail = a.Detail,
+            pointsApplied = a.PointsApplied,
+            pointsDropped = a.PointsDropped,
+            editToCommitMs,
+            sentToCommitMs,
+            revitWaitMs = Ms(t.EventStartUtc - t.ReceivedUtc),
+            revitApplyMs,
+            pipeMs = Ms(t.ReceivedUtc - t.SentUtc),
+        });
+        if (s is null) return;
+        s.LastAck = a;
+
+        switch (a.Status)
+        {
+            case AckStatus.Applied:
+                s.LastAckedHash = a.Hash;
+                string when = editToCommitMs is { } e ? $"{e / 1000:0.00} s after edit" : $"{sentToCommitMs / 1000:0.00} s after send";
+                _uiMessages.Enqueue($"LiveSync [{a.MappingId}] v{a.Version}: applied in Revit {when} ({a.PointsApplied} pts; Revit apply {revitApplyMs:0} ms)."
+                                    + (a.Detail is null ? "" : " " + a.Detail));
+                break;
+            case AckStatus.SkippedSameHash:
+                s.LastAckedHash = a.Hash;
+                _uiMessages.Enqueue($"LiveSync [{a.MappingId}] v{a.Version}: Revit already up to date.");
+                break;
+            case AckStatus.Stale:
+                break; // a newer version is on its way; its ack reports the result
+            default:
+                if (s.LastSentHash == a.Hash) s.LastSentHash = null; // let the next edit (or LSSYNC) resend
+                _uiMessages.Enqueue($"LiveSync [{a.MappingId}] v{a.Version}: Revit {a.Status}: {a.Detail}");
+                break;
+        }
+    }
+
+    private static double? Ms(TimeSpan? t) => t is { } v ? Math.Round(v.TotalMilliseconds, 1) : null;
 
     private void OnDocumentCreated(object sender, DocumentCollectionEventArgs e) => Attach(e.Document);
     private void OnDocumentToBeDestroyed(object sender, DocumentCollectionEventArgs e) => Detach(e.Document);
@@ -368,6 +501,7 @@ internal sealed class SyncController : IDisposable
         }
         catch (System.Exception) { /* shutting down */ }
         foreach (var doc in _watchedDocs.Keys.ToList()) Detach(doc);
+        Client?.Dispose();
         try { Task.WaitAll(_states.Values.Select(s => s.Pipeline).ToArray(), TimeSpan.FromSeconds(2)); }
         catch (System.Exception) { /* logged inside Prepare */ }
         Log.Write("stop", new { sessionId = SessionId });

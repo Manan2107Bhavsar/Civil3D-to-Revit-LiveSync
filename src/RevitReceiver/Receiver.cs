@@ -123,13 +123,27 @@ public sealed class Receiver : IDisposable
 
         LatestPayload.AddOrUpdate(u.MappingId, u, (_, old) => u.Version >= old.Version ? u : old);
 
-        if (Applied.TryGetValue(u.MappingId, out var done) && u.Version <= done.Version)
+        if (!u.Force && Applied.TryGetValue(u.MappingId, out var done) && u.Version <= done.Version)
         {
             Log.Write("apply.stale", new { mappingId = u.MappingId, version = u.Version, appliedVersion = done.Version });
             _ = r.Connection.SendAsync(MakeAck(u, AckStatus.Stale, $"v{done.Version} already applied"));
             return;
         }
-        Enqueue(new Pending(u, r.Connection));
+        Enqueue(new Pending(u, r.Connection, Force: u.Force));
+    }
+
+    /// <summary>Payloads whose toposolid wasn't open yet (Civil connects as soon as Revit starts, before the project is opened).</summary>
+    public ConcurrentDictionary<string, Pending> Parked { get; } = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>A project was opened: retry everything parked (the handler parks again if still not found).</summary>
+    public void Unpark(string reason)
+    {
+        foreach (var key in Parked.Keys.ToList())
+        {
+            if (!Parked.TryRemove(key, out var p)) continue;
+            Log.Write("unpark", new { mappingId = key, version = p.Update.Version, reason });
+            Enqueue(p);
+        }
     }
 
     public void ForgetApplied(string reason)

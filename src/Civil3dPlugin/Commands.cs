@@ -122,7 +122,8 @@ public sealed class Commands
         ed.WriteMessage($"\nLiveSync session {ctl.SessionId}  debounce {ctl.Config.DebounceMs} ms  debug events {(ctl.DebugEvents ? "ON" : "off")}");
         ed.WriteMessage($"\n  config: {LiveSyncPaths.ConfigPath}");
         ed.WriteMessage($"\n  log:    {ctl.Log.CurrentFile ?? ctl.Config.ResolvedLogDir}");
-        ed.WriteMessage($"\n  Revit:  not connected (pipe arrives in step 3)");
+        var client = ctl.Client;
+        ed.WriteMessage($"\n  Revit:  {(client is null ? "pipe not started" : client.IsConnected ? $"connected since {Local(client.ConnectedSinceUtc)}" : "not connected (retrying every 2 s; is Revit open with the LiveSync add-in?)")}");
         if (ctl.States.Count == 0) ed.WriteMessage("\n  No mappings. Run LSLINK.");
         foreach (var s in ctl.States)
         {
@@ -130,6 +131,11 @@ public sealed class Commands
             var where = s.Attached ? $"attached to '{s.SurfaceName}' in {Path.GetFileName(s.Doc!.Name)}" : $"not attached ({Path.GetFileName(m?.Civil.DwgPath)} not open or surface missing)";
             ed.WriteMessage($"\n  [{s.MappingId}] {where}; units {m?.Transform.Units}; events {s.TotalEvents}; changes {s.Changes}; " +
                             $"last edit {Local(s.LastEditUtc)}; last change {Local(s.LastDebouncedUtc)}{(s.Dirty ? "; PENDING" : "")}");
+            if (s.LastAck is { } a)
+            {
+                var e2c = a.Timing.CommittedUtc - a.Timing.LastEditUtc;
+                ed.WriteMessage($"\n      last Revit reply: v{a.Version} {a.Status}" + (e2c is { } d ? $", {d.TotalSeconds:0.00} s after edit" : "") + (a.Detail is null ? "" : $" ({a.Detail})"));
+            }
         }
         ed.WriteMessage("\n");
     }

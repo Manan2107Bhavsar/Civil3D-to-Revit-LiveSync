@@ -90,6 +90,10 @@ public sealed class SurfaceUpdate : Message
     public double[] Boundary { get; set; } = [];
 
     public bool Decimated { get; set; }
+
+    /// <summary>LSSYNC / Force Sync: Revit applies even if the hash equals what it last applied.</summary>
+    public bool Force { get; set; }
+
     public Timing Timing { get; set; } = new();
 }
 

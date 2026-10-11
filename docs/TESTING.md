@@ -101,6 +101,29 @@ Reference points (Civil, m) for the spot checks: **NE corner E 383085 N 5776080 
 
 *What 4.3/4.5 check:* the API docs don't say whether `AddPoints` Z is absolute, or what the vertex offset in `ModifySubElement` is measured from. The add-in reads back what Revit stored and logs the difference (`addZDeltaMaxMm`, `cornerZDeltaMaxMm`; 0 means correct), and your spot elevations confirm it visually.
 
+## Step 5 — live: edit in Civil 3D → Revit updates by itself
+
+Setup: close Civil 3D and Revit (both load new builds).
+1. Start **Revit** and open `testdata\site.rvt` (toposolid 3021 is linked to `eg`).
+2. Start **Civil 3D**, open `testdata\site2.dwg` and APPLOAD `%LOCALAPPDATA%\C3dRevitLiveSync\deploy\civil3d\livesync-load.lsp`.
+
+Arrange both windows side by side, with Revit in a 3D view of the toposolid.
+
+| # | Do | Expect |
+|---|---|---|
+| 5.1 | Watch the Civil command line after APPLOAD; then `LSSTATUS` | Within 2 s: `LiveSync: connected to Revit.` LSSTATUS: `Revit: connected since …` |
+| 5.2 | Revit → LiveSync → Status | `Clients connected: 1` |
+| 5.3 | Civil: `LSSYNC` | `LiveSync [eg] v…: applied in Revit 0.xx s after send (373 pts; Revit apply … ms).` The toposolid goes back to the real EG (the +2 m from step 4 disappears) |
+| 5.4 | Civil: edit one surface point's elevation (+3 m) somewhere visible, or Raise/Lower Surface +1 m | Revit updates **by itself** about 1 s later. Civil prints `applied in Revit 1.xx s after edit`. **Write down the times** for a few edits |
+| 5.5 | Civil: Add Points, picking 3 points in one command, then Enter | Nothing in Revit while the command runs; **one** update after Enter |
+| 5.6 | Civil: `UNDO` | Revit follows back |
+| 5.7 | Revit: start the Wall tool (stay in it). Civil: make an edit | Civil prints only the extraction line. Press Esc in Revit → it applies right away, and Civil prints `applied …` with a bigger time |
+| 5.8 | Close Revit (don't save). Civil: make an edit | `Revit disconnected; will reconnect.` then `Revit not connected; v… will be sent when it connects.` |
+| 5.9 | Start Revit, open site.rvt | Civil: `connected to Revit` → `Revit error: … not found …; will apply when the project is opened` (Revit is still on the home screen) → after the project opens, the edit from 5.8 appears in Revit, and Civil prints `applied …` |
+| 5.10 | Revit → LiveSync → **Force Sync** | Revit: "Asked Civil 3D for a fresh surface". Civil: `Force Sync requested by Revit.` then `applied …` |
+| 5.11 | Civil: `LSSTATUS` | `last Revit reply: v… applied, x.xx s after edit` |
+| 5.12 | Tell me "done" | I read both logs and record the edit→Revit latency (debounce 750 ms + extraction + pipe + Revit) |
+
 ## Results
 
 | Date | Test | Result | Notes |
@@ -130,3 +153,4 @@ Reference points (Civil, m) for the spot checks: **NE corner E 383085 N 5776080 
 | 2026-10-11 | 4.5, 4.7, 4.8 | ✅ (partly) | in place on element 3021, twice; undo cleared the applied memory (`applied.forgotten`). 307 + 132 pts → 373 applied, 66 = boundary (34 "outside" + 32 near-edge by float noise; now all counted as edge). `addZDeltaMaxMm: 0`: **AddPoints Z is absolute**. Apply 45–106 ms; send→commit 57–117 ms |
 | 2026-10-11 | 4.5 bug | ❌→fix | `corners: 0`: `SlabShapeVertices` was empty right after `ResetSlabShape`+`Enable`, so the edge heights were never set (edges likely flat). Fix: `doc.Regenerate()` after `Enable`. **Needs re-test** |
 | 2026-10-11 | 4.3, 4.9–4.12 | ⏳ | spot elevations not reported; others skipped by the user |
+| 2026-10-11 | 4.5 re-test | ✅ | after `Regenerate()`: `corners: 66, cornersSet: 66, cornerZDeltaMaxMm: 0`; 373 interior + 66 edge, 0 outside. The vertex offset in `ModifySubElement` is relative to the reset flat top (as assumed). Apply 102–257 ms. Relink of the existing toposolid (3021) applied too |

@@ -29,6 +29,7 @@ public sealed class App : IExternalApplication
             _ = receiver.StartAsync();
 
             application.ControlledApplication.DocumentChanged += OnDocumentChanged;
+            application.ControlledApplication.DocumentOpened += OnDocumentOpened;
             CreateRibbon(application);
             return Result.Succeeded;
         }
@@ -42,6 +43,7 @@ public sealed class App : IExternalApplication
     public Result OnShutdown(UIControlledApplication application)
     {
         application.ControlledApplication.DocumentChanged -= OnDocumentChanged;
+        application.ControlledApplication.DocumentOpened -= OnDocumentOpened;
         Current?.Dispose();
         Current = null;
         return Result.Succeeded;
@@ -55,6 +57,9 @@ public sealed class App : IExternalApplication
             Current?.ForgetApplied("undo/redo");
     }
 
+    private static void OnDocumentOpened(object? sender, DocumentOpenedEventArgs e) =>
+        Current?.Unpark("opened " + e.Document.Title);
+
     private static void CreateRibbon(UIControlledApplication application)
     {
         // Text-only buttons on the Add-Ins tab; icons can come later.
@@ -66,7 +71,7 @@ public sealed class App : IExternalApplication
         });
         panel.AddItem(new PushButtonData("LiveSyncForce", "Force\nSync", asm, typeof(ForceSyncCommand).FullName)
         {
-            ToolTip = "Ask Civil 3D for a fresh payload (step 7).",
+            ToolTip = "Ask Civil 3D for a fresh surface and apply it even if unchanged. Without Civil 3D, re-applies the last surface received.",
         });
         panel.AddItem(new PushButtonData("LiveSyncStatus", "Status", asm, typeof(StatusCommand).FullName)
         {

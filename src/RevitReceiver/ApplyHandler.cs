@@ -45,7 +45,9 @@ public sealed class ApplyHandler(Receiver rx) : IExternalEventHandler
         if (doc is null || topo is null)
         {
             rx.Log.Write("apply.notFound", new { mappingId = u.MappingId, version = u.Version, mapping.Revit.DocumentPath, mapping.Revit.ToposolidUniqueId });
-            Reply(p, AckStatus.Error, "linked toposolid not found in any open project");
+            // Keep the newest one; it is retried when a project opens.
+            rx.Parked.AddOrUpdate(u.MappingId, p, (_, old) => p.Update.Version >= old.Update.Version ? p : old);
+            Reply(p, AckStatus.Error, "linked toposolid not found in any open project; will apply when the project is opened");
             return;
         }
 
@@ -82,7 +84,9 @@ public sealed class ApplyHandler(Receiver rx) : IExternalEventHandler
             result.AddMs,
             result.CornersMs,
             result.CommitMs,
-            waitMs = Ms(u.Timing.EventStartUtc - u.Timing.ReceivedUtc),
+            // Local re-applies (Link, Force Sync without Civil) reuse an old payload: its receive time isn't meaningful.
+            waitMs = p.Connection is null ? null : Ms(u.Timing.EventStartUtc - u.Timing.ReceivedUtc),
+            local = p.Connection is null,
             applyMs = Ms(u.Timing.CommittedUtc - u.Timing.EventStartUtc),
             sentToCommitMs = Ms(u.Timing.CommittedUtc - u.Timing.SentUtc),
             editToCommitMs = Ms(u.Timing.CommittedUtc - u.Timing.LastEditUtc),
