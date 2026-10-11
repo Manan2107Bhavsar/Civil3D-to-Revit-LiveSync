@@ -1,0 +1,13 @@
+<Project>
+  <!-- Keep bin/obj out of OneDrive: synced build output fights with file locks
+       held by Civil 3D / Revit. See docs/DECISIONS.md. -->
+  <PropertyGroup>
+    <LiveSyncBuildRoot>$(LOCALAPPDATA)\C3dRevitLiveSync\build\</LiveSyncBuildRoot>
+    <BaseIntermediateOutputPath>$(LiveSyncBuildRoot)obj\$(MSBuildProjectName)\</BaseIntermediateOutputPath>
+    <BaseOutputPath>$(LiveSyncBuildRoot)bin\$(MSBuildProjectName)\</BaseOutputPath>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+  </PropertyGroup>
+</Project>

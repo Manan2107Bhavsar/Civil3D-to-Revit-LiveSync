@@ -1,0 +1,27 @@
+// Copy to %APPDATA%\C3dRevitLiveSync\mapping.json. LSLINK (Civil 3D) and "Link toposolid" (Revit)
+// fill in the civil/revit sections for you; edit transform/decimation by hand.
+{
+  "pipeName": "c3d-revit-livesync",
+  "debounceMs": 750,
+  "logDir": "%APPDATA%\\C3dRevitLiveSync\\logs",
+  "mappings": [
+    {
+      "id": "eg-site",
+      "civil": {
+        "dwgPath": "C:\\Projects\\LiveSyncTest\\Site.dwg",
+        "surfaceHandle": "",
+        "surfaceName": "EG"
+      },
+      "revit": {
+        "documentPath": "C:\\Projects\\LiveSyncTest\\Site.rvt",
+        "toposolidUniqueId": null,
+        "elementId": null
+      },
+      // units of the Civil 3D drawing; offset in those units, applied after shared -> internal
+      "transform": { "units": "m", "offset": [0, 0, 0], "rotationDeg": 0 },
+      "decimation": { "enabled": false, "maxPoints": 20000 },
+      // spacing of extra points along breaklines (drawing units); 0 = off
+      "breaklineDensify": 1.0
+    }
+  ]
+}

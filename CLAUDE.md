@@ -9,6 +9,17 @@ Project notes for future Claude Code sessions. Read `docs/PLAN.md` first; record
 - Revit MCP: `C:\Users\bhavs\source\repos\mcp-servers-for-revit`, local branch `revit2027`. Don't change its behaviour without asking the user.
 - Civil 3D MCP (the user's own, Python + pywin32): `..\Jarvis\civil3d_bridge.py` (the logic), wrapped by `..\Jarvis\civil3d_mcp_server.py` (FastMCP) and `..\Jarvis\jarvis\mcp\servers\cad\server.py` (Jarvis). It isn't part of the sync loop; it's a candidate for Phase 2+ AI tools. Civil 3D 2027's COM ProgID is `AeccXUiLand.AeccApplication.13.9` (the only one registered). AutoCAD 2027 is `AutoCAD.Application.26`.
 
+## Build / test
+- `dotnet test C3dRevitLiveSync.sln` (all shared tests). Build output goes to `%LOCALAPPDATA%\C3dRevitLiveSync\build\{bin,obj}\<Project>\` via `Directory.Build.props`; never commit or expect bin/obj in the repo.
+- `python tools/make_test_surface.py` regenerates `testdata/`.
+- Runtime files live in `%APPDATA%\C3dRevitLiveSync\` (`mapping.json`, `logs/`); `LIVESYNC_HOME` overrides this.
+- `LiveSync.Shared` must stay BCL-only (System.Text.Json): Revit and AutoCAD each load their own Newtonsoft, and a shared dependency invites version clashes.
+
+## Conventions
+- Message shapes live only in `src/Shared/Messages.cs`; add a kind with `[JsonDerivedType]` plus a `MessageTypes` const. Bump `MessageCodec.SchemaVersion` only for breaking changes.
+- Payload coordinates are raw Civil world coordinates in drawing units; the unit conversion and shared→internal transform happen on the Revit side only.
+- Log through `JsonlLog` with a `stage` name and `mappingId`/`version` fields so the two sides' logs can be joined.
+
 ## API lookup (don't guess)
 - Revit: the XML docs ship in the NuGet package: `~/.nuget/packages/nice3point.revit.api.revitapi/2027.*/ref/net10.0-windows7.0/RevitAPI.xml`. Grep `member name="M:Autodesk.Revit.DB.<Type>.<Member>`.
 - Civil 3D / AutoCAD: no XML docs are installed. Use the reflection probe in the session scratchpad (`apiprobe`, MetadataLoadContext) or rebuild it: load `AeccDbMgd.dll`/`acdbmgd.dll`/`accoremgd.dll` from `C:\Program Files\Autodesk\AutoCAD 2027[\C3D]`.
@@ -20,4 +31,6 @@ Project notes for future Claude Code sessions. Read `docs/PLAN.md` first; record
 - The MCP add-in socket (8080) has no framing (single 8 KB read = one message) and binds `IPAddress.Any`, so don't send large payloads over it. LiveSync uses its own named pipe.
 - Toposolid `SlabShapeEditor.AddPoints` requires points to be inside the sketch boundary and distinct in XY. `ResetSlabShape()` disables the editor, so call `Enable()` again afterwards.
 - From earlier COM work: COM/host objects can't cross threads, and direct COM ModelSpace drawing was unreliable in C3D. This project uses in-process .NET only and reads host objects only on the main thread.
+- LandXML point order is **Northing Easting Elevation** (`<P>N E Z</P>`), not X Y Z.
+- In this environment, Bash heredocs collapsed `\\` to `\` in a JSON file. Write JSON/escaped content with the Write tool, not heredocs.
 - A NETLOADed assembly can't be unloaded. Restart Civil 3D to load a rebuilt DLL, or build to a versioned folder.
