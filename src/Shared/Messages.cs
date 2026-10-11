@@ -28,8 +28,12 @@ public static class MessageTypes
 
 public static class AckStatus
 {
+    /// <summary>Delivered and queued, not applied (step 3 receiver, before the toposolid updater exists).</summary>
+    public const string Received = "received";
     public const string Applied = "applied";
     public const string SkippedSameHash = "skipped-same-hash";
+    /// <summary>Dropped: a newer version of the same mapping is already pending or applied.</summary>
+    public const string Stale = "stale";
     public const string Error = "error";
 }
 

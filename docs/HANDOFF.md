@@ -1,6 +1,6 @@
 # Session handoff — Civil 3D → Revit Live Surface Sync
 
-Last updated: **2026-10-10**, end of session 1. A new session should read this first, then `CLAUDE.md`, then `docs/PLAN.md`.
+Last updated: **2026-10-11**, session 2 (step 2 verified, step 3 built). A new session should read this first, then `CLAUDE.md`, then `docs/PLAN.md`.
 
 **Resume prompt for a new session:**
 > Read `docs/HANDOFF.md`, `CLAUDE.md` and `docs/PLAN.md` in `C:\Users\bhavs\OneDrive - Saskatchewan Polytechnic\Civil3D_to_Revit`. Continue from "Next action".
@@ -27,6 +27,8 @@ An Engineering Design & Drafting Technology student (Saskatchewan Polytechnic) w
 | **This repo** (git, local only, no remote) | `C:\Users\bhavs\OneDrive - Saskatchewan Polytechnic\Civil3D_to_Revit` |
 | Build output (kept out of OneDrive via `Directory.Build.props`) | `%LOCALAPPDATA%\C3dRevitLiveSync\build\{bin,obj}\<Project>\` |
 | Civil plugin deploys (a new folder per build) + loader | `%LOCALAPPDATA%\C3dRevitLiveSync\deploy\civil3d\<yyyyMMdd-HHmmss>\`, `...\deploy\civil3d\livesync-load.lsp` |
+| Revit add-in deploys (a new folder per build) + manifest | `%LOCALAPPDATA%\C3dRevitLiveSync\deploy\revit\<yyyyMMdd-HHmmss>\`, `%APPDATA%\Autodesk\Revit\Addins\2027\LiveSync.Revit.addin` (rewritten by every build) |
+| Test sender | `dotnet run --project tools\LiveSync.SendTool -- [file] [--repeat N] [--bump] [--synthetic N] [--ping]` |
 | Runtime config / logs / payloads | `%APPDATA%\C3dRevitLiveSync\mapping.json`, `...\logs\civil3d-<UTC yyyyMMdd>.jsonl`, `...\payloads\<id>.json` (override with env `LIVESYNC_HOME`) |
 | Test data | `testdata\small-site.xml` (LandXML), `testdata\breaklines.scr`; user drawing `testdata\site.dwg` (gitignored, already edited during step 1 tests) |
 | Revit MCP (installed, separate project) | `C:\Users\bhavs\source\repos\mcp-servers-for-revit`, local branch `revit2027` (commit `cd6c423`, not pushed). Add-in in `%APPDATA%\Autodesk\Revit\Addins\2027\`. Node server registered in Claude Code (user scope) as `mcp-server-for-revit` |
@@ -62,25 +64,26 @@ An Engineering Design & Drafting Technology student (Saskatchewan Polytechnic) w
 | User's Civil MCP | Added ProgID `13.9` to `CIVIL3D_PROGIDS` in `civil3d_bridge.py` (not a git repo; untested against Civil 3D) | ✅ edited |
 | 0 | `src/Shared` (LiveSync.Shared): messages, framing, hash, config store, JSONL log, units; xUnit tests; test surface generator; docs | ✅ user verified (EG: 306 pts / 544 tri, breaklines Ditch + Ridge) |
 | 1 | `src/Civil3dPlugin`: `LSLINK`, `LSUNLINK`, `LSSTATUS`, `LSRELOAD`, `LSDEBUG`; debounced detection | ✅ user tested 1.1–1.10: one change line per command, ~750–850 ms quiet, waits for command end. 1.11 (close/reopen) and 1.12 (LSDEBUG classes) were **not** done |
-| 2 | Extraction (visible triangles, breakline densify, boundary loop), background payload build, hash, `LSSYNC`, payload → `payloads\<id>.json` | 🧪 **built, NOT yet tested in Civil 3D** (`docs/TESTING.md` step 2). Expected on a fresh import: `306 pts / 544 tri (Civil: 306/544), +132 breakline pts from 2 breaklines, boundary 66 pts` |
-| 3 | Revit receiver add-in: pipe server + logs; console sender tool replaying `payloads\eg.json` | ⏭ next to build |
-| 4 | ExternalEvent + in-place toposolid update from a canned payload | planned |
+| 2 | Extraction (visible triangles, breakline densify, boundary loop), background payload build, hash, `LSSYNC`, payload → `payloads\<id>.json` | ✅ user tested 2026-10-11 (verified from logs): 306/544 + 132 breakline pts, boundary 66; undo and raise/lower restore the exact original hash; warm read ~1.7 ms + prep ~0.5 ms. 1.11/1.12 also done. Only 2.7 (hide boundary) not tried |
+| 3 | Revit receiver add-in (`src/RevitReceiver`), `PipeServer` + `LatestWinsMailbox` in Shared, `tools/LiveSync.SendTool` | 🧪 **built + dev-tested without Revit** (real Receiver in a console host, see TESTING results). **Not yet tested inside Revit**: user runs TESTING step 3 (3.1–3.10) |
+| 4 | ExternalEvent + in-place toposolid update from a canned payload | ⏭ next to build |
 | 5 | Civil pipe client + acks + end-to-end latency logging | planned |
 | 6 | Coordinates/units, mapping on the Revit side, sketch rewrite (`SketchEditScope`) | planned |
 | 7 | Decimation, force-sync buttons, reconnect robustness, SETUP from a clean machine, large-surface timings | planned |
 
-Git log (repo): `ec88a44` plan → `4298a55` MCP note → `df55844` step 0 → `9b2c799` step 1 → `9c46942` step 1 results + hardening → `2f3440f` step 2. Tests: `dotnet test C3dRevitLiveSync.sln` → 32 passing.
+Git log (repo): `ec88a44` plan → `4298a55` MCP note → `df55844` step 0 → `9b2c799` step 1 → `9c46942` step 1 results + hardening → `2f3440f` step 2 → `5b76213` handoff → step 3 commit (2026-10-11). Tests: `dotnet test C3dRevitLiveSync.sln` → 38 passing.
 
 ## 7. Next action
 
-1. **Ask the user for the step 2 test results** (they're restarting Civil 3D). Then read `%APPDATA%\C3dRevitLiveSync\logs\civil3d-*.jsonl` (stage `extracted`) and `payloads\eg.json` to verify the counts, hash behaviour (undo → same hash) and timings. Record the results in `docs/TESTING.md`. Optionally have them finish 1.11 and 1.12.
-2. **Build step 3:** `src/RevitReceiver` (net10.0-windows, Revit 2027; pin `Nice3point.Revit.Api.RevitAPI/RevitAPIUI` to `2027.2.*`; give it its own `.addin` in `%APPDATA%\Autodesk\Revit\Addins\2027\`; mind the `Nice3point.Revit.Build.Tasks` auto-publish gotcha). It should have:
-   - an `IExternalApplication` with a ribbon panel (Link toposolid / Force sync / Status, stubs OK in step 3);
-   - a `NamedPipeServerStream` on a background thread using `Framing.ReadMessageAsync`;
-   - logging through `JsonlLog("revit", ...)`.
+1. **Get the step 3 results from the user** (`docs/TESTING.md` step 3, 3.1–3.10). Read `%APPDATA%\C3dRevitLiveSync\logs\revit-*.jsonl` and record the results in TESTING. Things to watch: whether Revit shows the "unsigned add-in" prompt; the `pipe.busy` path with two Revits; whether a 6 MB payload freezes the UI (it shouldn't: the pipe and decode run on pool threads).
+2. **Build step 4:** in `Receiver`, create an `ExternalEvent` (in `OnStartup`, valid API context) and `Raise()` it after each mailbox post. Its handler `TryTake`s each mapping and:
+   - finds the doc and toposolid. Until the step 6 Link button exists, use a temporary rule: the selected toposolid, or the only toposolid in the active doc;
+   - converts m → internal ft with **no shared transform yet** (step 6). For step 4 the test project's toposolid must sit near Civil coordinates, or subtract a temporary offset;
+   - runs one `Transaction`: `GetSlabShapeEditor()` → `ResetSlabShape()` → `Enable()` → `AddPoints()`, with an `IFailuresPreprocessor`;
+   - acks `applied` (pointsApplied/Dropped, eventStartUtc, committedUtc) after the commit.
 
-   Also add a `tools/` console sender (`LiveSync.SendTool`) that reads a payload JSON file and sends it over the pipe, printing the ack. The test: Revit logs receipt and the UI doesn't freeze. Revit DLLs are locked while Revit runs, so plan a deploy approach similar to the Civil versioned-folder trick or ask the user to close Revit before deploying.
-3. Then steps 4–7 per `docs/PLAN.md` §4.
+   Verify every member in `C:\Program Files\Autodesk\Revit 2027\RevitAPI.xml` first. Remember: points must be inside the sketch and distinct in XY.
+3. Then steps 5–7 per `docs/PLAN.md` §4. In step 5 the Civil pipe client (`PipeClient`, Shared, reconnect every 2 s, `CurrentUserOnly`) goes next to `PipeServer`.
 
 ## 8. Open / watch items
 

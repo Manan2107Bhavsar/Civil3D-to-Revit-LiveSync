@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+### Step 3 — 2026-10-11
+- Shared: `PipeServer` (named pipe, length-prefixed, multi-client, current-user ACL, `busy` if another process owns the name) and `LatestWinsMailbox<T>`; `AckStatus.Received` and `AckStatus.Stale`. 38 tests (6 new, including a real-pipe round trip).
+- `src/RevitReceiver` (`LiveSync.Revit.dll`, Revit 2027): `IExternalApplication` starts the pipe server; `Receiver` logs `received` (counts, bytes, decode/transit ms), posts into the mailbox and acks `received`/`stale`. Ribbon panel LiveSync: Status (works with no project open), Link Toposolid and Force Sync stubs.
+- Versioned deploy to `deploy\revit\<stamp>\` plus a generated `Addins\2027\LiveSync.Revit.addin`.
+- `tools/LiveSync.SendTool`: replays a payload file (or a synthetic N×N grid) over the pipe, with repeat/bump/ping, and prints acks and round-trip times.
+
 ### Step 2 — 2026-10-10
 - `SurfaceExtractor` (main thread) reads:
   - visible triangles and the vertices they use;

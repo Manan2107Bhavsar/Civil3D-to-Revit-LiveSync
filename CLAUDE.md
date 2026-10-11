@@ -21,13 +21,16 @@ Project notes for future Claude Code sessions. **Start with `docs/HANDOFF.md`** 
 - Log through `JsonlLog` with a `stage` name and `mappingId`/`version` fields so the two sides' logs can be joined.
 
 ## API lookup (don't guess)
-- Revit: the XML docs ship in the NuGet package: `~/.nuget/packages/nice3point.revit.api.revitapi/2027.*/ref/net10.0-windows7.0/RevitAPI.xml`. Grep `member name="M:Autodesk.Revit.DB.<Type>.<Member>`.
+- Revit: the installed Revit ships its own XML docs: `C:\Program Files\Autodesk\Revit 2027\RevitAPI.xml` / `RevitAPIUI.xml` (these match the 27.2 runtime; the NuGet copy is 2027.3). Grep `member name="M:Autodesk.Revit.DB.<Type>.<Member>`.
 - Civil 3D / AutoCAD: no XML docs are installed. Use the reflection probe in the session scratchpad (`apiprobe`, MetadataLoadContext) or rebuild it: load `AeccDbMgd.dll`/`acdbmgd.dll`/`accoremgd.dll` from `C:\Program Files\Autodesk\AutoCAD 2027[\C3D]`.
 
 ## Gotchas learned
 - Revit 2027 **removed** `Curve.Intersect(Curve, out IntersectionResultArray)`. Use `Intersect(Curve, CurveIntersectResultOption)` → `CurveIntersectResult.GetOverlaps()`.
 - `Nice3point.Revit.Build.Tasks` with `PublishAddinFiles=true` auto-copies build output into `%APPDATA%\Autodesk\Revit\Addins\<ver>\<ProjectName>\`, even for Release builds.
-- `Nice3point.Revit.Api.*` `2027.*` resolves to the newest API (2027.3) while the installed Revit is 27.2. Pin to `2027.2.*` in our projects, so we don't compile against members the runtime lacks.
+- `Nice3point.Revit.Api.*` `2027.*` resolves to the newest API (2027.3) while the installed Revit is 27.2. Our add-in therefore references the installed `RevitAPI.dll`/`RevitAPIUI.dll` by HintPath (`Private=false`) instead of NuGet.
+- The Revit add-in builds to a new `%LOCALAPPDATA%\C3dRevitLiveSync\deploy\revit\<stamp>\` folder, and the build rewrites `%APPDATA%\Autodesk\Revit\Addins\2027\LiveSync.Revit.addin`. Building is fine while Revit runs, but restart Revit to load the new build.
+- `PipeServer` callbacks run on pool threads. Never touch the Revit API there; only post to the mailbox and raise the ExternalEvent.
+- In 2027, `IExternalCommandAvailability.IsCommandAvailable` has extra overloads (UIControlledApplication, VSTA). Implementing the `UIApplication` one compiles. Without an availability class, external commands are disabled when no project is open.
 - The MCP add-in socket (8080) has no framing (single 8 KB read = one message) and binds `IPAddress.Any`, so don't send large payloads over it. LiveSync uses its own named pipe.
 - Toposolid `SlabShapeEditor.AddPoints` requires points to be inside the sketch boundary and distinct in XY. `ResetSlabShape()` disables the editor, so call `Enable()` again afterwards.
 - From earlier COM work: COM/host objects can't cross threads, and direct COM ModelSpace drawing was unreliable in C3D. This project uses in-process .NET only and reads host objects only on the main thread.

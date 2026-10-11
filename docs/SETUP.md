@@ -63,7 +63,25 @@ Each build copies the DLLs to a **new** timestamped folder, `%LOCALAPPDATA%\C3dR
 | `LSRELOAD` | re-read `mapping.json` after hand edits |
 | `LSDEBUG` | toggle logging of *every* modified object (diagnostic) |
 
-## 6. Revit receiver add-in *(later, step 3)*
+## 6. Revit receiver add-in
+
+```powershell
+dotnet build src\RevitReceiver\LiveSync.Revit.csproj
+```
+
+The build copies the add-in into a new `%LOCALAPPDATA%\C3dRevitLiveSync\deploy\revit\<yyyyMMdd-HHmmss>\` folder and rewrites `%APPDATA%\Autodesk\Revit\Addins\2027\LiveSync.Revit.addin` so it points there. Building works while Revit is open, because the loaded DLL is never overwritten. Revit reads manifests only at startup, so **restart Revit** to load a new build. On the first start, Revit asks about the unsigned add-in: choose **Always Load**.
+
+You get a **LiveSync** panel on the **Add-Ins** tab: *Link Toposolid* and *Force Sync* (stubs until steps 6/7) and *Status*.
+
+The receiver listens on `\\.\pipe\c3d-revit-livesync` (current Windows user only) and logs to `%APPDATA%\C3dRevitLiveSync\logs\revit-<UTC yyyyMMdd>.jsonl`. Only one Revit session can own the pipe; a second one shows `[busy]` in Status.
+
+Test sender (replays a payload file over the pipe):
+
+```powershell
+dotnet run --project tools\LiveSync.SendTool -- [payload.json] [--repeat N] [--interval MS] [--bump] [--synthetic N] [--ping]
+```
+
+The default payload is `%APPDATA%\C3dRevitLiveSync\payloads\eg.json`, which Civil 3D `LSSYNC` writes.
 
 ## 7. Revit test project and shared coordinates *(later, step 4/6)*
 

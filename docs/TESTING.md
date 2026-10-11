@@ -60,6 +60,23 @@ The payload is written to `%APPDATA%\C3dRevitLiveSync\payloads\<id>.json`.
 
 *Why are the Civil and LiveSync counts compared:* LiveSync counts visible triangles and the vertices they use, while Civil's Statistics count everything. They match on a surface with no hide boundaries, and test 2.7 shows the difference.
 
+## Step 3 — Revit receives payloads over the pipe (nothing applied yet)
+
+Setup: close Revit (or leave it open; see SETUP §6) → `dotnet build src\RevitReceiver\LiveSync.Revit.csproj` → start Revit 2027 → **Always Load** for "LiveSync Receiver". Civil 3D is not needed: the console sender replays the step 2 payload. Open a PowerShell in the repo folder. `SendTool` below means `dotnet run --project tools\LiveSync.SendTool --`.
+
+| # | Do | Expect |
+|---|---|---|
+| 3.1 | Start Revit, no project open. Add-Ins tab → LiveSync → **Status** | Panel with 3 buttons. Status: `Pipe: \\.\pipe\c3d-revit-livesync [listening]`, clients 0, `No payload received yet.` |
+| 3.2 | `SendTool` | `Sent v1791753924947: 17.9 KB …` then `ack v…: received (received and queued (step 3: not applied)) round trip … ms` and `Done: 1/1 replies.` |
+| 3.3 | **Status** again | `Last payload: eg v1791753924947`, `307 vertices + 132 breakline points, 17.9 KB`, decode and pipe transit ms |
+| 3.4 | `SendTool --repeat 3` | 3 acks `stale (older than a pending version; dropped)`. Nothing consumes the mailbox until step 4, so the same version counts as old |
+| 3.5 | `SendTool --repeat 5 --bump` | 5 acks `received`. Status: `superseded` goes up by 5 (each new version replaced the pending one), `pending: 1` |
+| 3.6 | Open any project and orbit/pan a 3D view **while** running `SendTool --synthetic 300 --repeat 5 --bump` (90,000 pts, ~6 MB each) | Revit stays responsive the whole time; 5 acks `received` |
+| 3.7 | `SendTool --ping` | `pong` |
+| 3.8 | Start a **second** Revit 2027 → Status in it | `[busy]` and "Another Revit session owns the pipe". The first Revit still receives (repeat 3.2). Close the second one |
+| 3.9 | Close Revit, then `SendTool` | `No server within 5 s. Is Revit running …` (exit code 1) |
+| 3.10 | Send me (or open) `%APPDATA%\C3dRevitLiveSync\logs\revit-<today>.jsonl` | Stages: `start`, `pipe.listening`, `pipe.connected`, `received` (vertices, bytes, decodeMs, transitMs), `mailbox.superseded`, `pipe.disconnected`, `stop` |
+
 ## Results
 
 | Date | Test | Result | Notes |
@@ -70,3 +87,14 @@ The payload is written to `%APPDATA%\C3dRevitLiveSync\payloads\<id>.json`.
 | 2026-10-10 | 1.1–1.3 | ✅ | loaded; LSLINK → `eg`, handle 71B8, units m; attached |
 | 2026-10-10 | 1.4–1.10 | ✅ | 7 edits → exactly 7 `debounced` lines, no double fires. Single edits quiet 751–848 ms. Multi-pick commands waited for command end: AECCADDSURFACELINE (3 events / 7.3 s), AECCADDSURFACEPOINT (7 / 14.1 s), AECCEDITSURFACEPOINT (2 / 16.2 s). UNDO of 7 points = 7 events in 82 ms → 1 line |
 | 2026-10-10 | 1.11–1.12 | ⏳ | not in log: no detach/attach; LSDEBUG turned on but no edits logged after it |
+| 2026-10-11 | 1.11 | ✅ | close/restart: `detach`/`stop` then `start`/`attach` to the same handle 71B8 in each new session (site.dwg, then site2.dwg after relink) |
+| 2026-10-11 | 1.12 | ✅ | LSDEBUG on → one edit logs ~20 `event.modified` lines (AcDbXrecord, AcDbDictionary, AeccDbNetworkCatalogDef, style caches…); only `AeccDbSurfaceTin` 71B8 is `linked:"eg"` — confirms the ObjectId filter is needed |
+| 2026-10-11 | 2.1 | ✅ | fresh site2.dwg: 306 pts / 544 tri (Civil 306/544), +132 breakline pts from 2 breaklines, boundary 66 pts, 1 outer / 0 holes. First run read 33–35 ms, prep 15 ms (JIT); later runs read ~1.7 ms, prep ~0.5 ms |
+| 2026-10-11 | 2.2 | ✅ | forced LSSYNC with no change → `unchanged:true`, same hash, file written anyway |
+| 2026-10-11 | 2.3 | ✅ | AECCADDSURFACEPOINT (2 points, one command) → 307/546, new hash. Also: delete line → 304/536, boundary 74 pts; move point → 305/542 |
+| 2026-10-11 | 2.4 | ✅ | undo of delete-line → hash `dceabd…` = the 2.1 hash exactly |
+| 2026-10-11 | 2.5 | ✅ | raise → hash `7ff284…` (counts unchanged); lower → back to `dceabd…` exactly |
+| 2026-10-11 | 2.6 | ✅ | payload: `surface.update`, units m, first vertex 383005 / 5776005 / 500.802, 66 boundary pts, 17.9 KB |
+| 2026-10-11 | 2.x | ✅ | non-geometric surface modifications produce `unchanged:true` extractions (hash skip works) |
+| 2026-10-11 | 2.7 | ⏳ | hide boundary not tried (all runs show `holes:0`) |
+| 2026-10-11 | 3 (dev) | ✅ | without Revit: the real `Receiver` in a console host + SendTool. eg.json 17.9 KB: round trip 50 ms cold / 1.5–5 ms warm; same version ×3 → `stale`; `--bump` ×5 → 5 `Replaced`; 40k-pt synthetic (2.6 MB) decode 65 ms, round trip 73 ms; ping/pong; no server → exit 1. 38 unit tests incl. real-pipe round trip and second-server `busy` |
