@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+### Step 2 — 2026-10-10
+- `SurfaceExtractor` (main thread) reads:
+  - visible triangles and the vertices they use;
+  - breakline points every `breaklineDensify` along each enabled breakline, with z taken from `FindElevationAtXY`;
+  - Civil's own point and triangle statistics, for cross-checking.
+- `PayloadBuilder` (background thread, serial per mapping) computes the outer boundary loop, the hash, and a `SurfaceUpdate` written to `%APPDATA%\C3dRevitLiveSync\payloads\<id>.json`.
+- Version = max(last + 1, Unix ms), so it keeps increasing across Civil 3D restarts.
+- `LSSYNC` forces an extraction (ignores the unchanged hash).
+- Shared: `TinGeometry.Boundary` (CCW outers / CW holes), `DensifyXY`, `XyProximityFilter`; 32 tests.
+
 ### Step 1 — 2026-10-10
 - `src/Civil3dPlugin` (`LiveSync.Civil3d.dll`, NETLOAD, net10.0-windows):
   - `LSLINK`, `LSUNLINK`, `LSSTATUS`, `LSRELOAD`, `LSDEBUG`;

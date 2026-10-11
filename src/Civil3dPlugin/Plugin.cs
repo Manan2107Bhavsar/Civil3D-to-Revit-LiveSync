@@ -15,7 +15,7 @@ public sealed class Plugin : IExtensionApplication
         {
             SyncController.Instance = new SyncController();
             SyncController.Instance.Start();
-            Ui.Write($"LiveSync loaded ({typeof(Plugin).Assembly.Location}). Commands: LSLINK LSUNLINK LSSTATUS LSRELOAD LSDEBUG");
+            Ui.Write($"LiveSync loaded ({typeof(Plugin).Assembly.Location}). Commands: LSLINK LSSYNC LSUNLINK LSSTATUS LSRELOAD LSDEBUG");
         }
         catch (System.Exception ex)
         {

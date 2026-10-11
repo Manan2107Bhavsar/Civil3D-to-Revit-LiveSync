@@ -32,7 +32,9 @@ Project notes for future Claude Code sessions. Read `docs/PLAN.md` first; record
 - Toposolid `SlabShapeEditor.AddPoints` requires points to be inside the sketch boundary and distinct in XY. `ResetSlabShape()` disables the editor, so call `Enable()` again afterwards.
 - From earlier COM work: COM/host objects can't cross threads, and direct COM ModelSpace drawing was unreliable in C3D. This project uses in-process .NET only and reads host objects only on the main thread.
 - LandXML point order is **Northing Easting Elevation** (`<P>N E Z</P>`), not X Y Z.
-- In this environment, Bash heredocs collapsed `\\` to `\` in a JSON file. Write JSON/escaped content with the Write tool, not heredocs.
+- In this environment, Bash heredocs collapse `\\` to `\`, even with a quoted `'EOF'`. This broke a JSON file, and Python-in-heredoc edits turned `"\\n"` into real newlines in C#. Write anything containing backslashes with the Write/Edit tools, never via heredocs.
+- User decision (step 1): **sync only after the command ends**. A half-finished command (e.g. mid Add Point) would show a broken-looking mesh in Revit. Don't add mid-command syncing.
+- Civil TIN extraction: use `GetTriangles(includeInvisible:false)` and build vertices from those triangles. `TinSurfaceVertex` has no index, so dedupe by exact XY. Densified breakline z comes from `FindElevationAtXY` (it throws outside the surface).
 - Civil 3D's managed base types are in `C:\Program Files\Autodesk\AutoCAD 2027\ACA\AecBaseMgd.dll` (not `C3D\`). Reference it with `Private=false` along with acdbmgd/acmgd/accoremgd/AeccDbMgd.
 - With `UseWindowsForms`, `Application` and `Timer` are ambiguous. Use the `AcApp = Autodesk.AutoCAD.ApplicationServices.Core.Application` alias and `System.Windows.Forms.Timer` fully qualified. The same goes for `Entity` (alias `TinSurface` from `Autodesk.Civil.DatabaseServices`).
 - The Civil plugin builds to a new `%LOCALAPPDATA%\C3dRevitLiveSync\deploy\civil3d\<stamp>\` folder each time, plus `livesync-load.lsp`. The user must restart Civil 3D to load a new build.

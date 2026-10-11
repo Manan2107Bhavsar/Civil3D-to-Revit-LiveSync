@@ -26,9 +26,16 @@ internal sealed class MappingState(string mappingId)
     public long TotalEvents { get; set; }
     public long Changes { get; set; }
     public DateTime? LastDebouncedUtc { get; set; }
+
+    // Payload pipeline. Version is assigned on the main thread; Pipeline chains background work
+    // so payloads for one mapping are built and written strictly in version order.
+    public long LastVersion { get; set; }
+    public Task Pipeline { get; set; } = Task.CompletedTask;
+    /// <summary>Only read/written inside Pipeline continuations (serial).</summary>
+    public string? LastHash { get; set; }
 }
 
-/// <summary>Raised once per edit burst after the drawing has been quiet for DebounceMs and no command is running.</summary>
+/// <summary>One edit burst, reported once the drawing has been quiet for DebounceMs and no command is running.</summary>
 internal sealed record ChangeDetected(MappingState State, DateTime BurstStartUtc, DateTime LastEditUtc, int Events);
 
 /// <summary>
@@ -63,8 +70,8 @@ internal sealed class SyncController : IDisposable
     public bool DebugEvents { get; set; }
     public IReadOnlyCollection<MappingState> States => _states.Values;
 
-    /// <summary>Step 2 hooks extraction here.</summary>
-    public event Action<ChangeDetected>? Changed;
+    /// <summary>Messages from background threads, written to the command line by the timer (main thread).</summary>
+    private readonly System.Collections.Concurrent.ConcurrentQueue<string> _uiMessages = new();
 
     public void Start()
     {
@@ -203,6 +210,7 @@ internal sealed class SyncController : IDisposable
     {
         // An exception escaping a WinForms timer tick would surface as an unhandled
         // exception in Civil 3D; contain it per mapping and keep ticking.
+        while (_uiMessages.TryDequeue(out var msg)) Ui.Write(msg);
         foreach (var s in _states.Values)
         {
             try { TickOne(s, DateTime.UtcNow); }
@@ -243,8 +251,86 @@ internal sealed class SyncController : IDisposable
         });
         Ui.Write($"LiveSync [{s.MappingId}]: change #{s.Changes} detected ({change.Events} events over {(change.LastEditUtc - change.BurstStartUtc).TotalMilliseconds:0} ms).");
 
-        try { Changed?.Invoke(change); }
-        catch (System.Exception ex) { Log.Write("error", new { mappingId = s.MappingId, where = "Changed", error = ex.ToString() }); }
+        Process(s, change.LastEditUtc, force: false);
+    }
+
+    /// <summary>
+    /// Extract (main thread) then build/hash/write (background, serial per mapping).
+    /// force = LSSYNC: write even if the hash is unchanged.
+    /// </summary>
+    public void Process(MappingState s, DateTime? lastEditUtc, bool force)
+    {
+        if (!s.Attached || Config.Find(s.MappingId) is not { } mapping) return;
+        var doc = s.Doc!;
+
+        var snap = SurfaceExtractor.Extract(doc, s.SurfaceId, mapping, out var skip);
+        if (snap is null)
+        {
+            Log.Write("extract.skipped", new { mappingId = s.MappingId, reason = skip });
+            Ui.Write($"LiveSync [{s.MappingId}]: not synced - {skip}.");
+            return;
+        }
+
+        long version = s.LastVersion = Math.Max(s.LastVersion + 1, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
+        string dwg = doc.Name;
+        s.Pipeline = s.Pipeline.ContinueWith(_ => Prepare(s, snap, mapping, dwg, version, lastEditUtc, force), TaskScheduler.Default);
+    }
+
+    private void Prepare(MappingState s, SurfaceSnapshot snap, Mapping mapping, string dwg, long version, DateTime? lastEditUtc, bool force)
+    {
+        try
+        {
+            var r = PayloadBuilder.Build(snap, mapping, dwg, SessionId, version, lastEditUtc);
+            var u = r.Update;
+            bool unchanged = u.Hash == s.LastHash;
+            s.LastHash = u.Hash;
+
+            string? file = null;
+            if (!unchanged || force)
+            {
+                var dir = Path.Combine(LiveSyncPaths.AppDataDir, "payloads");
+                Directory.CreateDirectory(dir);
+                file = Path.Combine(dir, $"{mapping.Id}.json");
+                File.WriteAllBytes(file, MessageCodec.Serialize(u));
+            }
+
+            Log.Write("extracted", new
+            {
+                mappingId = mapping.Id,
+                version,
+                force,
+                unchanged,
+                vertices = u.Vertices.Length / 3,
+                triangles = u.Triangles.Length / 3,
+                extraPoints = u.ExtraPoints.Length / 3,
+                extraRejected = snap.ExtraRejected,
+                breaklines = snap.Breaklines,
+                boundaryPoints = u.Boundary.Length / 2,
+                outerLoops = r.Boundary.Outers.Count,
+                holes = r.Boundary.Holes.Count,
+                civilPoints = snap.CivilPoints,
+                civilTriangles = snap.CivilTriangles,
+                snap.OutOfDate,
+                readMs = snap.ReadMs,
+                prepMs = r.PrepMs,
+                hash = u.Hash,
+                file,
+            });
+
+            var msg = $"LiveSync [{mapping.Id}]: {u.Vertices.Length / 3} pts / {u.Triangles.Length / 3} tri " +
+                      $"(Civil: {snap.CivilPoints} pts / {snap.CivilTriangles} tri), +{u.ExtraPoints.Length / 3} breakline pts " +
+                      $"from {snap.Breaklines} breaklines, boundary {u.Boundary.Length / 2} pts" +
+                      (r.Boundary.Outers.Count > 1 || r.Boundary.Holes.Count > 0 ? $" ({r.Boundary.Outers.Count} outer, {r.Boundary.Holes.Count} holes; only the largest outer is used)" : "") +
+                      $"; read {snap.ReadMs:0} ms, prep {r.PrepMs:0} ms; v{version} " +
+                      (unchanged ? (force ? "UNCHANGED (written anyway)" : "UNCHANGED, skipped") : "") +
+                      (file is null ? "" : $"-> {file}");
+            _uiMessages.Enqueue(msg);
+        }
+        catch (System.Exception ex)
+        {
+            Log.Write("error", new { mappingId = mapping.Id, where = "prepare", version, error = ex.ToString() });
+            _uiMessages.Enqueue($"LiveSync [{mapping.Id}]: payload build failed: {ex.Message}");
+        }
     }
 
     private void OnDocumentCreated(object sender, DocumentCollectionEventArgs e) => Attach(e.Document);
@@ -282,6 +368,8 @@ internal sealed class SyncController : IDisposable
         }
         catch (System.Exception) { /* shutting down */ }
         foreach (var doc in _watchedDocs.Keys.ToList()) Detach(doc);
+        try { Task.WaitAll(_states.Values.Select(s => s.Pipeline).ToArray(), TimeSpan.FromSeconds(2)); }
+        catch (System.Exception) { /* logged inside Prepare */ }
         Log.Write("stop", new { sessionId = SessionId });
         Log.Dispose();
     }

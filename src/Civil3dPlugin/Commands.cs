@@ -75,6 +75,26 @@ public sealed class Commands
         ed.WriteMessage($"\nLinked surface '{name}' (handle {handle}, units {units}) as mapping '{id}'.\nConfig: {LiveSyncPaths.ConfigPath}\n");
     }
 
+    /// <summary>Force sync now: extract every linked surface in the current drawing, ignoring the unchanged-hash check.</summary>
+    [CommandMethod("LSSYNC")]
+    public void SyncNow()
+    {
+        if (Controller is not { } ctl) return;
+        var doc = AcApp.DocumentManager.MdiActiveDocument;
+        var states = ctl.States.Where(s => s.Attached && s.Doc == doc).ToList();
+        if (states.Count == 0)
+        {
+            doc.Editor.WriteMessage("\nNo linked surface in this drawing. Run LSLINK (or LSSTATUS to see mappings).\n");
+            return;
+        }
+        foreach (var s in states)
+        {
+            ctl.Log.Write("sync.forced", new { mappingId = s.MappingId });
+            ctl.Process(s, lastEditUtc: null, force: true);
+        }
+        doc.Editor.WriteMessage($"\nLiveSync: forced sync of {string.Join(", ", states.Select(s => s.MappingId))}; result follows.\n");
+    }
+
     [CommandMethod("LSUNLINK")]
     public void Unlink()
     {

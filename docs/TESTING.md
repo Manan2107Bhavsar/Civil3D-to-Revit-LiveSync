@@ -42,6 +42,24 @@ Setup: `Site.dwg` with surface EG, plugin loaded (`SETUP.md` §5). The log is `%
 
 When you're done, tell me and I'll read the log file to check the counts and timings.
 
+## Step 2 — extraction and payload (still nothing sent to Revit)
+
+Setup: restart Civil 3D (it must load the new build), APPLOAD `livesync-load.lsp`. Your step 1 edits changed EG, so for exact numbers start from a **fresh** surface: new drawing from the metric template → `LANDXMLIN testdata\small-site.xml` → save as `testdata\site2.dwg` → `LSLINK` → pick EG → id `eg`. Re-linking the same id points the mapping at the new drawing.
+
+The payload is written to `%APPDATA%\C3dRevitLiveSync\payloads\<id>.json`.
+
+| # | Do | Expect |
+|---|---|---|
+| 2.1 | `LSSYNC` | `LiveSync [eg]: 306 pts / 544 tri (Civil: 306 pts / 544 tri), +132 breakline pts from 2 breaklines, boundary 66 pts; read … ms, prep … ms; v… -> …\payloads\eg.json` |
+| 2.2 | `LSSYNC` again | Same counts, new `v`, `UNCHANGED (written anyway)` (forced) |
+| 2.3 | Add Point inside the surface | After the change line: `307 pts / 546 tri (Civil: 307 / 546)`, a new hash, and the file is rewritten |
+| 2.4 | Add Point, then `UNDO` | The undo line shows the original 306 / 544 counts. Its hash equals the one from 2.1 (check `hash` in the log) |
+| 2.5 | Raise/Lower the surface +1 m, then −1 m | Counts unchanged and hash changes each time. After −1 m it should equal the original hash (exact if Civil 3D restores elevations exactly) |
+| 2.6 | Open `payloads\eg.json` in VS Code | One line of JSON: `"type":"surface.update"`, `"units":"m"`, `vertices` at ~383000 / 5776000 / 500, `boundary` with 132 numbers (66 xy pairs) |
+| 2.7 | Add a **hide boundary** inside EG (Definition → Boundaries → Add, Hide type) around a few triangles | Fewer triangles than Civil's total. The line notes `1 holes; only the largest outer is used` |
+
+*Why are the Civil and LiveSync counts compared:* LiveSync counts visible triangles and the vertices they use, while Civil's Statistics count everything. They match on a surface with no hide boundaries, and test 2.7 shows the difference.
+
 ## Results
 
 | Date | Test | Result | Notes |
