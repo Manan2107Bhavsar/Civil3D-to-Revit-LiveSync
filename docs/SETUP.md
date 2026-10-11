@@ -36,7 +36,32 @@ Set the environment variable `LIVESYNC_HOME` to use a different folder (for exam
 5. Check: EG → Definition → **Breaklines** lists *Ditch* and *Ridge*. If it's empty, run `SCRIPT` → `testdata/breaklines.scr`. That draws two 3D polylines; add them to EG as standard breaklines (Definition → Breaklines → Add).
 6. Save as `C:\Projects\LiveSyncTest\Site.dwg`, or update `civil.dwgPath` in the mapping to wherever you saved it.
 
-## 5. Civil 3D plugin *(later, step 1)*
+## 5. Civil 3D plugin
+
+**Build:**
+```powershell
+dotnet build src\Civil3dPlugin\LiveSync.Civil3d.csproj
+```
+Each build copies the DLLs to a **new** timestamped folder, `%LOCALAPPDATA%\C3dRevitLiveSync\deploy\civil3d\<yyyyMMdd-HHmmss>\`. It also rewrites `deploy\civil3d\livesync-load.lsp` to NETLOAD that newest copy.
+
+*Why a new folder per build:* Civil 3D locks a NETLOADed DLL until it exits, and .NET can't unload it. Building into a fixed folder would fail while Civil 3D is open.
+
+**Load (each session):**
+1. In Civil 3D, run `APPLOAD` → choose `%LOCALAPPDATA%\C3dRevitLiveSync\deploy\civil3d\livesync-load.lsp` → **Load**. To load it automatically on every start, add the file to *Startup Suite → Contents* in the same dialog.
+2. If a security prompt appears (SECURELOAD), choose **Load Once**. To stop the prompt, add `%LOCALAPPDATA%\C3dRevitLiveSync\deploy\` to `TRUSTEDPATHS` (Options → Files → Trusted Locations).
+3. The command line shows `LiveSync loaded (...)`.
+
+**After rebuilding, restart Civil 3D** before loading again. A second NETLOAD in the same session would register the commands twice and keep the old `LiveSync.Shared.dll`.
+
+**Link a surface:** open the saved drawing → `LSLINK` → pick the surface → press Enter to accept the mapping id (the surface name in lower case, e.g. `eg`). This writes `%APPDATA%\C3dRevitLiveSync\mapping.json` (path, handle, name, units from the drawing settings).
+
+| Command | Does |
+|---|---|
+| `LSLINK` | link/relink a TIN surface |
+| `LSUNLINK` | remove a mapping |
+| `LSSTATUS` | mappings, attach state, event counts, log path |
+| `LSRELOAD` | re-read `mapping.json` after hand edits |
+| `LSDEBUG` | toggle logging of *every* modified object (diagnostic) |
 
 ## 6. Revit receiver add-in *(later, step 3)*
 

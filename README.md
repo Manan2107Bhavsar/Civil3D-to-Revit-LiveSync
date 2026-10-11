@@ -11,7 +11,7 @@ Civil 3D (NETLOAD plugin) ──named pipe, length-prefixed JSON──▶ Revit 
 | Step | | |
 |---|---|---|
 | 0 | Skeleton, shared message format, hashing, config, logging, test data | ✅ done |
-| 1 | Civil plugin: NETLOAD, `LSLINK`, debounced change detection | ⏳ next |
+| 1 | Civil plugin: NETLOAD, `LSLINK`, debounced change detection | 🧪 built, being tested in Civil 3D |
 | 2–7 | Extraction, Revit receiver, in-place update, end-to-end, coordinates, decimation | planned |
 
 Details: [`docs/PLAN.md`](docs/PLAN.md) · changes: [`docs/CHANGELOG.md`](docs/CHANGELOG.md)

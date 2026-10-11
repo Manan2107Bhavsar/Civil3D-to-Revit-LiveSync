@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+### Step 1 — 2026-10-10
+- `src/Civil3dPlugin` (`LiveSync.Civil3d.dll`, NETLOAD, net10.0-windows):
+  - `LSLINK`, `LSUNLINK`, `LSSTATUS`, `LSRELOAD`, `LSDEBUG`;
+  - detects linked-surface edits via `Database.ObjectModified`;
+  - 750 ms debounce on a main-thread WinForms timer that waits for the running command to end;
+  - one `debounced` log line plus a command-line message per edit burst.
+- Each build is deployed to its own timestamped folder, and a generated `livesync-load.lsp` loads the newest one.
+
 ### Step 0 — 2026-10-10
 - `LiveSync.Shared` (net10.0, BCL only):
   - message types (`surface.update`, `ack`, `resync.request`, `ping`, `error`) selected by a polymorphic `type` field;
