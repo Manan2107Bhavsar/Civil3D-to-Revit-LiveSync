@@ -1,6 +1,6 @@
 # CLAUDE.md — Civil 3D → Revit Live Surface Sync
 
-Project notes for future Claude Code sessions. Read `docs/PLAN.md` first; record decisions in `docs/DECISIONS.md`.
+Project notes for future Claude Code sessions. **Start with `docs/HANDOFF.md`** (purpose, locations, status, next action), then `docs/PLAN.md`. Record decisions in `docs/DECISIONS.md` and keep HANDOFF's status/next-action current at the end of each session.
 
 ## Environment (verified 2026-10-10)
 - Civil 3D **2027** only (`C:\Program Files\Autodesk\AutoCAD 2027\C3D\AeccDbMgd.dll`). AutoCAD 2025/2026 have no C3D, despite older notes saying "Civil 3D 2026".
