@@ -1,6 +1,6 @@
 # Session handoff — Civil 3D → Revit Live Surface Sync
 
-Last updated: **2026-10-11**, session 2 (steps 2–5 verified; deep-pit fix built). A new session should read this first, then `CLAUDE.md`, then `docs/PLAN.md`.
+Last updated: **2026-10-11**, session 2 (steps 2–5 verified, incl. the deep-pit fix). A new session should read this first, then `CLAUDE.md`, then `docs/PLAN.md`.
 
 **Resume prompt for a new session:**
 > Read `docs/HANDOFF.md`, `CLAUDE.md` and `docs/PLAN.md` in `C:\Users\bhavs\OneDrive - Saskatchewan Polytechnic\Civil3D_to_Revit`. Continue from "Next action".
@@ -67,7 +67,7 @@ An Engineering Design & Drafting Technology student (Saskatchewan Polytechnic) w
 | 2 | Extraction (visible triangles, breakline densify, boundary loop), background payload build, hash, `LSSYNC`, payload → `payloads\<id>.json` | ✅ user tested 2026-10-11 (verified from logs): 306/544 + 132 breakline pts, boundary 66; undo and raise/lower restore the exact original hash; warm read ~1.7 ms + prep ~0.5 ms. 1.11/1.12 also done. Only 2.7 (hide boundary) not tried |
 | 3 | Revit receiver add-in (`src/RevitReceiver`), `PipeServer` + `LatestWinsMailbox` in Shared, `tools/LiveSync.SendTool` | ✅ user tested 3.1–3.7 in Revit (verified from the log; 6 MB payloads decode in 52–79 ms off the UI thread). 3.8 (second Revit busy) / 3.9 not done |
 | 4 | ExternalEvent apply, `CoordinateFrame`, Link Toposolid, undo-aware memory, SendTool `--dz` | ✅ user tested: in place, same ElementId; corner fix verified (66/66, 0 mm); AddPoints Z absolute; GetTotalTransform = shared→internal; apply 45–257 ms |
-| 5 | `PipeClient`, Civil sends + ack handling + latency line, Force Sync both sides, Revit parking until the project opens | ✅ user tested live ("impressed"): edit→Revit 1.3–2.7 s, ≈ 0.85 s after the command ends; Revit apply 69–130 ms; Force Sync works. Deep-pit `AddPoints` failure → retry-with-lowered-base fix built, **re-test 5.13 pending**. 5.6–5.9 optional, not done |
+| 5 | `PipeClient`, Civil sends + ack handling + latency line, Force Sync both sides, Revit parking until the project opens | ✅ user tested live ("impressed"): edit→Revit 1.3–2.7 s, ≈ 0.85 s after the command ends; Revit apply 69–130 ms; Force Sync works. Deep-pit `AddPoints` failure fixed and verified (5.13: base lowered 200 m, retry applied). 5.6–5.9 optional, not done |
 | 6 | Coordinates/units, mapping on the Revit side, sketch rewrite (`SketchEditScope`) | planned |
 | 7 | Decimation, force-sync buttons, reconnect robustness, SETUP from a clean machine, large-surface timings | planned |
 
@@ -75,11 +75,10 @@ Git log (repo): `ec88a44` plan → `4298a55` MCP note → `df55844` step 0 → `
 
 ## 7. Next action
 
-1. **Re-test 5.13** (deep pit on a toposolid created without it). Check the Revit `applied` line: `baseLoweredFt`, `flatTopFt`, `minTargetFt`. If the retry still fails, the rule isn't the flat top; look at `firstAddError` and try `TOPOSOLID_ELEVATION_AT_BOTTOM`/thickness next. Record the result in CLAUDE.md gotchas.
-2. Then **step 6**. Link is already done. What's left:
+1. **Step 6**. Link is already done. What's left:
    - the mapping `transform` offset/rotation in `CoordinateFrame`;
    - a sketch rewrite via `SketchEditScope` when the Civil boundary changes. Today, points outside the old sketch are dropped and reported as `outside`. Detect the change by comparing the payload boundary with the sketch loops; `SketchEditScope` has to start with no transaction open.
-3. Then step 7: decimation, reconnect robustness, SETUP from a clean machine, 10k–50k-point timings (Force Sync is already done).
+2. Then step 7: decimation, reconnect robustness, SETUP from a clean machine, 10k–50k-point timings (Force Sync is already done).
 
 ## 8. Open / watch items
 
@@ -89,6 +88,7 @@ Git log (repo): `ec88a44` plan → `4298a55` MCP note → `df55844` step 0 → `
 - Boundary changes: step 4 drops points outside the existing sketch (`outside` in the log); sketch rewrite is step 6.
 - The mailbox-drain apply is lost if the transaction can't start (e.g. Revit in sketch mode): it's acked `error`, and the next edit or Force Sync (step 7) recovers.
 - A `synthetic` mapping gets added to `mapping.json` by test 4.12; remove it afterwards (Civil `LSUNLINK synthetic` or edit the file).
+- After a deep pit, the toposolid's flat top stays low even when the pit is filled in again (bottom = flat top − thickness, so possibly a very deep solid). Option: keep the flat top at the lowest target on every apply, as `Toposolid.Create` does. Not done; ask the user.
 - Force Sync's confirmation dialog blocks the apply until it's closed (`revitWaitMs` 3.7–4.4 s in step 5). Consider a non-modal notice in step 7.
 - Toposolid `AddPoints` performance at 10k–50k points is unknown; measure in step 7.
 - Port 8080 binds all interfaces. This was mentioned to the user but not changed (their MCP; ask before touching).
