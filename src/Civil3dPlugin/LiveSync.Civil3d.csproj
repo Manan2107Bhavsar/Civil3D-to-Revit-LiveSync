@@ -28,7 +28,7 @@
     Each build is copied to its own deploy\civil3d\<timestamp>\ folder, and livesync-load.lsp
     is rewritten to NETLOAD the newest one. Old folders can be deleted once Civil 3D is closed.
   -->
-  <Target Name="DeployVersioned" AfterTargets="Build">
+  <Target Name="DeployVersioned" AfterTargets="Build" Condition="'$(SkipDeploy)' != 'true'">
     <PropertyGroup>
       <DeployRoot>$(LOCALAPPDATA)\C3dRevitLiveSync\deploy\civil3d\</DeployRoot>
       <DeployStamp>$([System.DateTime]::Now.ToString("yyyyMMdd-HHmmss"))</DeployStamp>

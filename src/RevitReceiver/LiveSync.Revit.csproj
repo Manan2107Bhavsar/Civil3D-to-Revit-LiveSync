@@ -25,7 +25,7 @@
     own deploy\revit\<timestamp>\ folder and the manifest in Addins\2027 is rewritten to point at it,
     so building works while Revit is open; the new build is picked up on the next Revit start.
   -->
-  <Target Name="DeployVersioned" AfterTargets="Build">
+  <Target Name="DeployVersioned" AfterTargets="Build" Condition="'$(SkipDeploy)' != 'true'">
     <PropertyGroup>
       <DeployRoot>$(LOCALAPPDATA)\C3dRevitLiveSync\deploy\revit\</DeployRoot>
       <DeployStamp>$([System.DateTime]::Now.ToString("yyyyMMdd-HHmmss"))</DeployStamp>

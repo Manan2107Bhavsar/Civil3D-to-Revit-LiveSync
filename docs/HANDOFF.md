@@ -24,7 +24,7 @@ An Engineering Design & Drafting Technology student (Saskatchewan Polytechnic) w
 
 | What | Where |
 |---|---|
-| **This repo** (git, local only, no remote) | `C:\Users\bhavs\OneDrive - Saskatchewan Polytechnic\Civil3D_to_Revit` |
+| **This repo** (git; public on GitHub: github.com/Manan2107Bhavsar/Civil3D-to-Revit-LiveSync, branch `main`) | `C:\Users\bhavs\OneDrive - Saskatchewan Polytechnic\Civil3D_to_Revit` |
 | Build output (kept out of OneDrive via `Directory.Build.props`) | `%LOCALAPPDATA%\C3dRevitLiveSync\build\{bin,obj}\<Project>\` |
 | Civil plugin deploys (a new folder per build) + loader | `%LOCALAPPDATA%\C3dRevitLiveSync\deploy\civil3d\<yyyyMMdd-HHmmss>\`, `...\deploy\civil3d\livesync-load.lsp` |
 | Revit add-in deploys (a new folder per build) + manifest | `%LOCALAPPDATA%\C3dRevitLiveSync\deploy\revit\<yyyyMMdd-HHmmss>\`, `%APPDATA%\Autodesk\Revit\Addins\2027\LiveSync.Revit.addin` (rewritten by every build) |

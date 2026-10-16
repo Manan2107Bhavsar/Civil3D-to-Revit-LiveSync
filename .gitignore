@@ -9,3 +9,4 @@ obj/
 testdata/*.dwg
 testdata/*.rvt
 testdata/*.rws
+dist/
