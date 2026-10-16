@@ -15,7 +15,7 @@ Usage:  python tools/make_test_surface.py
 from pathlib import Path
 
 COLS, ROWS, STEP = 18, 17, 5.0
-E0, N0, Z0 = 383000.0, 5776000.0, 500.0
+E0, N0, Z0 = 383000.0, 5776000.0, 100.0
 DITCH_ROW, RIDGE_COL = 8, 5
 DITCH_DEPTH, RIDGE_HEIGHT = 0.8, 0.6
 

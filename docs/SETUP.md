@@ -32,7 +32,7 @@ Set the environment variable `LIVESYNC_HOME` to use a different folder (for exam
 1. Run `python tools/make_test_surface.py`. This writes `testdata/small-site.xml` and `testdata/breaklines.scr`.
 2. In Civil 3D 2027, start a new drawing from the metric template `_Autodesk Civil 3D (Metric) NCS.dwt`.
 3. Run `LANDXMLIN` (Insert tab → LandXML) and pick `testdata/small-site.xml`. Import the surface **EG**.
-4. Check: Prospector → Surfaces → EG → *Surface Properties* → *Statistics* shows **306 points** and **544 triangles**, with elevations 500.047–502.992 m.
+4. Check: Prospector → Surfaces → EG → *Surface Properties* → *Statistics* shows **306 points** and **544 triangles**, with elevations 100.047–102.992 m.
 5. Check: EG → Definition → **Breaklines** lists *Ditch* and *Ridge*. If it's empty, run `SCRIPT` → `testdata/breaklines.scr`. That draws two 3D polylines; add them to EG as standard breaklines (Definition → Breaklines → Add).
 6. Save as `C:\Projects\LiveSyncTest\Site.dwg`, or update `civil.dwgPath` in the mapping to wherever you saved it.
 

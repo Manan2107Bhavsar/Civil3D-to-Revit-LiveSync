@@ -19,7 +19,7 @@ These tests cover:
 
 ### 0.2 Test surface import
 Follow `SETUP.md` §4.
-**Expect:** EG shows 306 points and 544 triangles, elevations 500.047–502.992 m, with breaklines Ditch and Ridge in its definition. In 3D orbit you can see the ditch running east–west at N 5776040 and the ridge running north–south at E 383025.
+**Expect:** EG shows 306 points and 544 triangles, elevations 100.047–102.992 m, with breaklines Ditch and Ridge in its definition. In 3D orbit you can see the ditch running east–west at N 5776040 and the ridge running north–south at E 383025.
 
 ## Step 1 — Civil 3D change detection (nothing is sent yet)
 
@@ -81,15 +81,15 @@ Setup: close Revit (or leave it open; see SETUP §6) → `dotnet build src\Revit
 
 Setup: **restart Revit** (it loads the new build). New project from the **metric** architectural template, then save it as `testdata\site.rvt`. `SendTool` means `dotnet run --project tools\LiveSync.SendTool --` (it sends `payloads\eg.json`: EG with 307 vertices, extent E 383000–383085, N 5776000–5776080).
 
-Reference points (Civil, m) for the spot checks: **NE corner E 383085 N 5776080 → 502.992**; **W edge E 383000 N 5776040 → 500.047**; **interior E 383005 N 5776005 → 500.802**.
+Reference points (Civil, m) for the spot checks: **NE corner E 383085 N 5776080 → 102.992**; **W edge E 383000 N 5776040 → 100.047**; **interior E 383005 N 5776005 → 100.802**.
 
 | # | Do | Expect |
 |---|---|---|
 | 4.1 | `SendTool` | ack `error (mapping 'eg' has no linked toposolid; …)`, because nothing is linked yet |
 | 4.2 | Select nothing → LiveSync → **Link Toposolid** | Dialog "The surface is far from this project's origin … ~5,788 km" → **Yes**. Then `Toposolid <id> linked to 'eg'`. A toposolid appears near the project origin |
-| 4.3 | In a 3D view, place **Spot Elevations** on the toposolid at the 3 reference points (snap to the vertices) | 502.992 / 500.047 / 500.802 (to the mm). If the spot elevation's origin is the Project Base Point, it's the same value here, because elevation was set to 0. **Write down what you get**, especially if it's off |
+| 4.3 | In a 3D view, place **Spot Elevations** on the toposolid at the 3 reference points (snap to the vertices) | 102.992 / 100.047 / 100.802 (to the mm). If the spot elevation's origin is the Project Base Point, it's the same value here, because elevation was set to 0. **Write down what you get**, especially if it's off |
 | 4.4 | Select the toposolid. Note its **ElementId** (Manage → IDs of Selection) | — |
-| 4.5 | `SendTool --dz 2` | ack `applied … N pts applied`. The toposolid rises 2 m, with the same shape. The spot elevations update to 504.992 / 502.047 / 502.802 |
+| 4.5 | `SendTool --dz 2` | ack `applied … N pts applied`. The toposolid rises 2 m, with the same shape. The spot elevations update to 104.992 / 102.047 / 102.802 |
 | 4.6 | Check the ElementId and the type/material | Same ElementId as 4.4; type unchanged |
 | 4.7 | Undo (Ctrl+Z) once | The undo list's top entry is `LiveSync: EG v…`, and one undo puts the toposolid back exactly to 4.3 |
 | 4.8 | `SendTool --dz 2` again | applied again (not skipped: Undo resets the "already applied" memory) |
