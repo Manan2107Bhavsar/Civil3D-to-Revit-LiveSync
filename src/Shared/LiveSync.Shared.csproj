@@ -1,8 +1,8 @@
 <Project Sdk="Microsoft.NET.Sdk">
-  <!-- Referenced by both host plugins. Plain net10.0 and BCL-only (System.Text.Json),
+  <!-- Referenced by both host plugins. net8.0 (2025/2026 hosts) + net10.0 (2027), and BCL-only (System.Text.Json),
        so it never conflicts with the Newtonsoft versions Revit/AutoCAD ship. -->
   <PropertyGroup>
-    <TargetFramework>net10.0</TargetFramework>
+    <TargetFrameworks>net8.0;net10.0</TargetFrameworks>
     <RootNamespace>LiveSync.Shared</RootNamespace>
   </PropertyGroup>
 </Project>

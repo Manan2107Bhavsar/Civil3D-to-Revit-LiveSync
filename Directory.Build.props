@@ -2,9 +2,15 @@
   <!-- Keep bin/obj out of OneDrive: synced build output fights with file locks
        held by Civil 3D / Revit. See docs/DECISIONS.md. -->
   <PropertyGroup>
+    <!-- Which Civil 3D / Revit release the host plugins are built for: 2025, 2026 or 2027.
+         Override with -p:HostYear=2025. Shared, tests and tools ignore it. -->
+    <HostYear Condition="'$(HostYear)' == ''">2027</HostYear>
+    <IsHostPlugin Condition="'$(MSBuildProjectName)' == 'LiveSync.Civil3d' or '$(MSBuildProjectName)' == 'LiveSync.Revit'">true</IsHostPlugin>
+    <HostBuildDir Condition="'$(IsHostPlugin)' == 'true'">$(HostYear)\</HostBuildDir>
+
     <LiveSyncBuildRoot>$(LOCALAPPDATA)\C3dRevitLiveSync\build\</LiveSyncBuildRoot>
-    <BaseIntermediateOutputPath>$(LiveSyncBuildRoot)obj\$(MSBuildProjectName)\</BaseIntermediateOutputPath>
-    <BaseOutputPath>$(LiveSyncBuildRoot)bin\$(MSBuildProjectName)\</BaseOutputPath>
+    <BaseIntermediateOutputPath>$(LiveSyncBuildRoot)obj\$(MSBuildProjectName)\$(HostBuildDir)</BaseIntermediateOutputPath>
+    <BaseOutputPath>$(LiveSyncBuildRoot)bin\$(MSBuildProjectName)\$(HostBuildDir)</BaseOutputPath>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <LangVersion>latest</LangVersion>

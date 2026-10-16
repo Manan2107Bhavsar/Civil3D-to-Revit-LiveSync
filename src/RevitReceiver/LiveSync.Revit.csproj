@@ -1,19 +1,33 @@
 <Project Sdk="Microsoft.NET.Sdk">
-  <!-- Revit 2027 (.NET 10) add-in: LiveSync receiver. Separate from the MCP add-in. -->
+  <!-- Revit 2025 / 2026 (.NET 8) and 2027 (.NET 10) add-in: LiveSync receiver. Separate from the
+       MCP add-in. Pick the Revit version with -p:HostYear=. -->
   <PropertyGroup>
-    <TargetFramework>net10.0-windows</TargetFramework>
+    <TargetFramework Condition="'$(HostYear)' == '2027'">net10.0-windows</TargetFramework>
+    <TargetFramework Condition="'$(HostYear)' != '2027'">net8.0-windows</TargetFramework>
     <PlatformTarget>x64</PlatformTarget>
     <RootNamespace>LiveSync.Revit</RootNamespace>
-    <RevitDir>C:\Program Files\Autodesk\Revit 2027\</RevitDir>
+    <DefineConstants>$(DefineConstants);REVIT$(HostYear)</DefineConstants>
+    <RevitDir>C:\Program Files\Autodesk\Revit $(HostYear)\</RevitDir>
     <!-- Host already provides the framework; don't emit a deps.json that pins versions. -->
     <GenerateDependencyFile>false</GenerateDependencyFile>
   </PropertyGroup>
 
-  <ItemGroup>
-    <!-- The installed Revit's own DLLs (27.2), not NuGet: compiles against exactly the runtime
-         API, and avoids Nice3point.Revit.Build.Tasks auto-publishing into Addins\2027. -->
+  <!-- 2027: the installed Revit's own DLLs (27.2), not NuGet: compiles against exactly the runtime
+       API, and avoids Nice3point.Revit.Build.Tasks auto-publishing into Addins\2027. -->
+  <ItemGroup Condition="'$(HostYear)' == '2027'">
     <Reference Include="RevitAPI"><HintPath>$(RevitDir)RevitAPI.dll</HintPath><Private>false</Private></Reference>
     <Reference Include="RevitAPIUI"><HintPath>$(RevitDir)RevitAPIUI.dll</HintPath><Private>false</Private></Reference>
+  </ItemGroup>
+
+  <!-- 2025 / 2026 aren't installed here: reference-only API packages (no build tasks), pinned to the
+       first release of each year so nothing from a later update sneaks in. -->
+  <ItemGroup Condition="'$(HostYear)' == '2025'">
+    <PackageReference Include="Nice3point.Revit.Api.RevitAPI" Version="2025.0.2" ExcludeAssets="runtime" />
+    <PackageReference Include="Nice3point.Revit.Api.RevitAPIUI" Version="2025.0.2" ExcludeAssets="runtime" />
+  </ItemGroup>
+  <ItemGroup Condition="'$(HostYear)' == '2026'">
+    <PackageReference Include="Nice3point.Revit.Api.RevitAPI" Version="2026.0.4" ExcludeAssets="runtime" />
+    <PackageReference Include="Nice3point.Revit.Api.RevitAPIUI" Version="2026.0.4" ExcludeAssets="runtime" />
   </ItemGroup>
 
   <ItemGroup>
@@ -22,16 +36,18 @@
 
   <!--
     Revit loads add-ins at startup and locks the DLLs until it exits. Each build is copied to its
-    own deploy\revit\<timestamp>\ folder and the manifest in Addins\2027 is rewritten to point at it,
+    own deploy\revit\<timestamp>\ folder and the manifest in Addins\<year> is rewritten to point at it,
     so building works while Revit is open; the new build is picked up on the next Revit start.
+    Years other than 2027 deploy to deploy\revit-<year>\.
   -->
   <Target Name="DeployVersioned" AfterTargets="Build" Condition="'$(SkipDeploy)' != 'true'">
     <PropertyGroup>
       <DeployRoot>$(LOCALAPPDATA)\C3dRevitLiveSync\deploy\revit\</DeployRoot>
+      <DeployRoot Condition="'$(HostYear)' != '2027'">$(LOCALAPPDATA)\C3dRevitLiveSync\deploy\revit-$(HostYear)\</DeployRoot>
       <DeployStamp>$([System.DateTime]::Now.ToString("yyyyMMdd-HHmmss"))</DeployStamp>
       <DeployDir>$(DeployRoot)$(DeployStamp)\</DeployDir>
       <DeployDll>$(DeployDir)$(TargetFileName)</DeployDll>
-      <AddinFile>$(APPDATA)\Autodesk\Revit\Addins\2027\LiveSync.Revit.addin</AddinFile>
+      <AddinFile>$(APPDATA)\Autodesk\Revit\Addins\$(HostYear)\LiveSync.Revit.addin</AddinFile>
     </PropertyGroup>
     <ItemGroup>
       <DeployFiles Include="$(TargetDir)*.dll;$(TargetDir)*.pdb" />
@@ -50,6 +66,6 @@
     &lt;VendorDescription&gt;Civil 3D to Revit live surface sync&lt;/VendorDescription&gt;
   &lt;/AddIn&gt;
 &lt;/RevitAddIns&gt;" />
-    <Message Importance="high" Text="LiveSync Revit add-in deployed: $(DeployDll) (manifest $(AddinFile))" />
+    <Message Importance="high" Text="LiveSync Revit $(HostYear) add-in deployed: $(DeployDll) (manifest $(AddinFile))" />
   </Target>
 </Project>

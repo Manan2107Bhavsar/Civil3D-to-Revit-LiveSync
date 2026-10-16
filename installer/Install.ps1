@@ -1,10 +1,11 @@
 # LiveSync installer. Run Install.bat (double-click) rather than this file directly.
-# Installs for the current Windows user only; no admin rights needed.
-#   Civil 3D 2027: %APPDATA%\Autodesk\ApplicationPlugins\LiveSync.bundle   (loads automatically)
-#   Revit 2027:    %APPDATA%\Autodesk\Revit\Addins\2027\LiveSync.Revit.addin + LiveSync\
+# Installs for the current Windows user only; no admin rights needed. Supports 2025, 2026 and 2027.
+#   Civil 3D: %APPDATA%\Autodesk\ApplicationPlugins\LiveSync.bundle   (each version loads its own build)
+#   Revit:    %APPDATA%\Autodesk\Revit\Addins\<year>\LiveSync.Revit.addin + LiveSync\
 
 $ErrorActionPreference = 'Stop'
 $here = Split-Path -Parent $MyInvocation.MyCommand.Path
+$years = 2025, 2026, 2027
 
 function Say($text, $color = 'Gray') { Write-Host $text -ForegroundColor $color }
 
@@ -19,31 +20,32 @@ if ($running) {
     exit 1
 }
 
-$hasCivil = Test-Path 'C:\Program Files\Autodesk\AutoCAD 2027\C3D\AeccDbMgd.dll'
-$hasRevit = Test-Path 'C:\Program Files\Autodesk\Revit 2027\RevitAPI.dll'
-if (-not $hasCivil -and -not $hasRevit) {
-    Say 'Neither Civil 3D 2027 nor Revit 2027 was found in C:\Program Files\Autodesk. Nothing to install.' 'Red'
+$civilYears = @($years | Where-Object { Test-Path "C:\Program Files\Autodesk\AutoCAD $_\C3D\AeccDbMgd.dll" })
+$revitYears = @($years | Where-Object { Test-Path "C:\Program Files\Autodesk\Revit $_\RevitAPI.dll" })
+if (-not $civilYears -and -not $revitYears) {
+    Say 'No Civil 3D or Revit 2025, 2026 or 2027 was found in C:\Program Files\Autodesk. Nothing to install.' 'Red'
     exit 1
 }
 
-if ($hasCivil) {
+if ($civilYears) {
+    # One bundle holds all three builds; Civil 3D picks the one for its own version.
     $bundle = Join-Path $env:APPDATA 'Autodesk\ApplicationPlugins\LiveSync.bundle'
     if (Test-Path $bundle) { Remove-Item $bundle -Recurse -Force }
     New-Item -ItemType Directory -Force (Join-Path $bundle 'Contents') | Out-Null
     Copy-Item (Join-Path $here 'PackageContents.xml') $bundle
     Copy-Item (Join-Path $here 'Civil3D\*') (Join-Path $bundle 'Contents') -Recurse
     Get-ChildItem $bundle -Recurse -File | Unblock-File
-    Say "[OK] Civil 3D 2027 plugin installed:  $bundle" 'Green'
+    Say "[OK] Civil 3D plugin installed for: $($civilYears -join ', ')" 'Green'
 } else {
-    Say '[--] Civil 3D 2027 not found, skipped.' 'Yellow'
+    Say '[--] No Civil 3D 2025-2027 found, skipped.' 'Yellow'
 }
 
-if ($hasRevit) {
-    $addins = Join-Path $env:APPDATA 'Autodesk\Revit\Addins\2027'
+foreach ($year in $revitYears) {
+    $addins = Join-Path $env:APPDATA "Autodesk\Revit\Addins\$year"
     $dir = Join-Path $addins 'LiveSync'
     if (Test-Path $dir) { Remove-Item $dir -Recurse -Force }
     New-Item -ItemType Directory -Force $dir | Out-Null
-    Copy-Item (Join-Path $here 'Revit\*') $dir -Recurse
+    Copy-Item (Join-Path $here "Revit\$year\*") $dir -Recurse
     Get-ChildItem $dir -Recurse -File | Unblock-File
     # The Assembly path is relative to this .addin file.
     $manifest = @'
@@ -60,10 +62,9 @@ if ($hasRevit) {
 </RevitAddIns>
 '@
     Set-Content -Path (Join-Path $addins 'LiveSync.Revit.addin') -Value $manifest -Encoding UTF8
-    Say "[OK] Revit 2027 add-in installed:     $dir" 'Green'
-} else {
-    Say '[--] Revit 2027 not found, skipped.' 'Yellow'
+    Say "[OK] Revit $year add-in installed" 'Green'
 }
+if (-not $revitYears) { Say '[--] No Revit 2025-2027 found, skipped.' 'Yellow' }
 
 Say ''
 Say 'Done. Start Revit and Civil 3D. In Revit, look for the LiveSync panel on the Add-Ins tab.' 'Cyan'

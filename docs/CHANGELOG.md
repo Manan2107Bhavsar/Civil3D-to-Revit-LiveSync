@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+### v0.2.0: Civil 3D / Revit 2025 and 2026 (2026-10-16)
+- Plugins build for 2025, 2026 (.NET 8) and 2027 (.NET 10) with `-p:HostYear=`. `LiveSync.Shared` multi-targets net8.0/net10.0; tests run on both (49 on net10, 48 on net8: the out-of-order `type` test is .NET 9+ only, and a new test checks that Serialize writes `type` first).
+- Installer: one Civil 3D bundle with a build per version, and a Revit add-in for each installed year. The release zip holds all six builds.
+- 2025/2026 are compile-checked against Autodesk's reference packages, not run in the hosts yet.
+
+### GitHub release v0.1.0 (2026-10-16)
+- Public repo, end-user README, `installer/`, `tools/package-release.ps1`, `SkipDeploy`.
+
 ### Step 5 results + fixes — 2026-10-11
 - Step 5 passed live: edit → Revit commit 1.3–2.7 s, ≈ 0.85 s after the Civil command ends; Revit apply 69–130 ms.
 - Fix: deep pit (point 200 m below the rest) made `AddPoints` throw on an older toposolid. AddPoints now runs in a SubTransaction; on failure the flat top (`Height Offset From Level`) is lowered to the lowest target and it retries once. The log has `flatTopFt`, `thicknessFt`, `minTargetFt`, `maxTargetFt`, `baseLoweredFt`, `firstAddError`; the error names the Civil point.

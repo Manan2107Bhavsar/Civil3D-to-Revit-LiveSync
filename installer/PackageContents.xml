@@ -1,21 +1,23 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Civil 3D autoloader bundle: Civil 3D 2027 (R26.0) loads LiveSync.Civil3d.dll at startup. -->
-<ApplicationPackage SchemaVersion="1.0" AppVersion="0.1.0" Author="Manan2107Bhavsar" Name="LiveSync"
+<!-- Civil 3D autoloader bundle. Each Civil 3D version loads only its own build at startup:
+     2025 = R25.0, 2026 = R25.1 (both .NET 8), 2027 = R26.0 (.NET 10). -->
+<ApplicationPackage SchemaVersion="1.0" AppVersion="0.2.0" Author="Manan2107Bhavsar" Name="LiveSync"
                     Description="Civil 3D to Revit live surface sync"
                     ProductCode="{4C7E2B91-3F6A-4D2E-8B15-9A0C6E3D7F21}" UpgradeCode="{A3D5F8C2-1E7B-4A69-9C04-6B2E8F1D5A37}">
   <CompanyDetails Name="Manan2107Bhavsar" Url="https://github.com/Manan2107Bhavsar/Civil3D-to-Revit-LiveSync" />
   <Components>
+    <RuntimeRequirements OS="Win64" Platform="Civil3D" SeriesMin="R25.0" SeriesMax="R25.0" />
+    <ComponentEntry AppName="LiveSync2025" AppDescription="Civil 3D to Revit live surface sync (Civil 3D 2025)" AppType=".NET"
+                    ModuleName="./Contents/2025/LiveSync.Civil3d.dll" LoadOnAutoCADStartup="True" />
+  </Components>
+  <Components>
+    <RuntimeRequirements OS="Win64" Platform="Civil3D" SeriesMin="R25.1" SeriesMax="R25.1" />
+    <ComponentEntry AppName="LiveSync2026" AppDescription="Civil 3D to Revit live surface sync (Civil 3D 2026)" AppType=".NET"
+                    ModuleName="./Contents/2026/LiveSync.Civil3d.dll" LoadOnAutoCADStartup="True" />
+  </Components>
+  <Components>
     <RuntimeRequirements OS="Win64" Platform="Civil3D" SeriesMin="R26.0" SeriesMax="R26.0" />
-    <ComponentEntry AppName="LiveSync" AppDescription="Civil 3D to Revit live surface sync" AppType=".NET"
-                    ModuleName="./Contents/LiveSync.Civil3d.dll" LoadOnAutoCADStartup="True">
-      <Commands GroupName="LIVESYNC">
-        <Command Local="LSLINK" Global="LSLINK" />
-        <Command Local="LSSYNC" Global="LSSYNC" />
-        <Command Local="LSUNLINK" Global="LSUNLINK" />
-        <Command Local="LSSTATUS" Global="LSSTATUS" />
-        <Command Local="LSRELOAD" Global="LSRELOAD" />
-        <Command Local="LSDEBUG" Global="LSDEBUG" />
-      </Commands>
-    </ComponentEntry>
+    <ComponentEntry AppName="LiveSync2027" AppDescription="Civil 3D to Revit live surface sync (Civil 3D 2027)" AppType=".NET"
+                    ModuleName="./Contents/2027/LiveSync.Civil3d.dll" LoadOnAutoCADStartup="True" />
   </Components>
 </ApplicationPackage>

@@ -63,7 +63,11 @@ public static class SurfaceHasher
         Int(extraOrder.Length);
         foreach (int i in extraOrder) { Long(extra[3 * i]); Long(extra[3 * i + 1]); Long(extra[3 * i + 2]); }
 
+#if NET9_0_OR_GREATER
         return "sha256:" + Convert.ToHexStringLower(h.GetHashAndReset());
+#else
+        return "sha256:" + Convert.ToHexString(h.GetHashAndReset()).ToLowerInvariant();
+#endif
     }
 
     private static long[] Quantise(double[] values, double quantum)

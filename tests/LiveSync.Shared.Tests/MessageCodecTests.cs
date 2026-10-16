@@ -47,11 +47,20 @@ public class MessageCodecTests
         Assert.Equal(1, doc.RootElement.GetProperty("schema").GetInt32());
     }
 
+#if NET9_0_OR_GREATER // .NET 8 (2025/2026 hosts) needs "type" first; Serialize always writes it first.
     [Fact]
     public void Deserialize_AcceptsTypeNotFirst()
     {
         var json = """{"mappingId":"eg","schema":1,"type":"resync.request"}"""u8;
         Assert.IsType<ResyncRequest>(MessageCodec.Deserialize(json));
+    }
+#endif
+
+    [Fact]
+    public void Serialize_WritesTypeFirst()
+    {
+        var json = System.Text.Encoding.UTF8.GetString(MessageCodec.Serialize(new ResyncRequest { MappingId = "eg" }));
+        Assert.StartsWith("""{"type":""", json);
     }
 
     [Fact]

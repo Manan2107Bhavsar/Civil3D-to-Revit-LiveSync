@@ -5,7 +5,7 @@
 There's no exporting, no LandXML round-trips and no "reload link". Keep both programs open side by side. When you finish an edit in Civil 3D (raise a point, add points, paste a surface, undo, and so on), Revit reshapes the *same* toposolid in place. Its type, material and anything hosted on it stay as they are.
 
 ```
-Civil 3D 2027                                    Revit 2027
+Civil 3D 2025–2027                               Revit 2025–2027
 TIN surface (you edit)  ── points, same PC ──▶  Toposolid (updates itself)
                         ◀──── "applied" ─────
 ```
@@ -18,9 +18,13 @@ TIN surface (you edit)  ── points, same PC ──▶  Toposolid (updates its
 
 | | |
 |---|---|
-| **Autodesk Civil 3D 2027** | Other years won't work |
-| **Autodesk Revit 2027** | Other years won't work |
+| **Autodesk Civil 3D** | 2025, 2026 or 2027 |
+| **Autodesk Revit** | 2025, 2026 or 2027 |
 | **Windows 10 or 11** (64-bit) | Both programs on the **same computer** |
+
+The years don't have to match. For example, Civil 3D 2025 with Revit 2027 works. If you have several versions installed, the installer sets up all of them.
+
+> **Tested so far:** Civil 3D 2027 + Revit 2027. The 2025 and 2026 versions are built against Autodesk's official 2025/2026 programming interfaces, but nobody has tried them in the real programs yet. If you use them, please [report how it went](https://github.com/Manan2107Bhavsar/Civil3D-to-Revit-LiveSync/issues).
 
 You don't need admin rights, programming tools or an internet connection.
 
@@ -29,7 +33,7 @@ You don't need admin rights, programming tools or an internet connection.
 ## Install (about 2 minutes)
 
 1. **Close Civil 3D and Revit.**
-2. Go to the [**Releases page**](https://github.com/Manan2107Bhavsar/Civil3D-to-Revit-LiveSync/releases/latest) and download **`LiveSync-0.1.0.zip`** (under *Assets*).
+2. Go to the [**Releases page**](https://github.com/Manan2107Bhavsar/Civil3D-to-Revit-LiveSync/releases/latest) and download **`LiveSync-0.2.0.zip`** (under *Assets*).
    *Don't use the green "Code → Download ZIP" button. That gives you the source code, not the ready-to-use tool.*
 3. Right-click the downloaded zip → **Extract All…** → **Extract**.
 4. Open the extracted folder and double-click **`Install.bat`**.
@@ -98,7 +102,7 @@ Just open both files. Civil 3D and Revit find each other automatically, and link
 | Problem | Try this |
 |---|---|
 | No **LiveSync** panel in Revit | Run `Install.bat` again with Revit closed. Make sure you clicked **Always Load** when Revit started |
-| `LSLINK` is an "Unknown command" in Civil 3D | Run `Install.bat` again with Civil 3D closed, then restart Civil 3D. Check that it's **Civil 3D** 2027, not plain AutoCAD |
+| `LSLINK` is an "Unknown command" in Civil 3D | Run `Install.bat` again with Civil 3D closed, then restart Civil 3D. Check that it's **Civil 3D** 2025–2027, not plain AutoCAD |
 | Civil 3D says *Revit not connected* | Start Revit and open the project. They reconnect automatically within a few seconds |
 | Revit doesn't change after an edit | Make sure the Civil 3D command has finished (press **Esc** or **Enter**). If Revit is busy (in a tool or a dialog), the update happens as soon as you exit it |
 | The toposolid is in the wrong place | Make sure you clicked **Yes** to the "far from origin" question when linking. Otherwise, delete the toposolid and use **Link Toposolid** again |
@@ -111,7 +115,7 @@ Close Civil 3D and Revit, then double-click **`Uninstall.bat`** in the folder yo
 ## Limitations
 
 - Supports **one direction** (Civil 3D → Revit) and **TIN surfaces → toposolids** only.
-- Only **2027** versions of Civil 3D and Revit are supported.
+- Only **2025, 2026 and 2027** versions of Civil 3D and Revit are supported (the ones that run on .NET 8 or newer). 2024 and older use the old .NET Framework and would need a separate build.
 - If you change the **outer boundary** of the surface in Civil 3D, points outside the toposolid's original outline are skipped. For now, re-link (create a new toposolid) after a big boundary change.
 - Revit builds its own triangles from the points. Breaklines are respected by adding extra points along them, so the result matches closely but not always triangle-for-triangle.
 - Very large surfaces (hundreds of thousands of points) haven't been tested for speed yet.
@@ -123,7 +127,7 @@ Close Civil 3D and Revit, then double-click **`Uninstall.bat`** in the folder yo
 How it works: a .NET plugin in Civil 3D watches the linked surface. When a command ends, it extracts the points, triangles and breaklines and sends them over a local named pipe (`\\.\pipe\c3d-revit-livesync`, current Windows user only). A Revit add-in receives them and updates the toposolid in one transaction using `SlabShapeEditor`.
 
 ```
-src/Shared          shared library: messages, framing, hashing, config, logging (net10.0, BCL only)
+src/Shared          shared library: messages, framing, hashing, config, logging (net8.0 + net10.0, BCL only)
 src/Civil3dPlugin   Civil 3D plugin (LSLINK, LSSYNC, change detection, extraction)
 src/RevitReceiver   Revit add-in (pipe server, ExternalEvent, toposolid update)
 tests/              xUnit tests for the shared library
@@ -132,13 +136,16 @@ installer/          Install/Uninstall scripts and the Civil 3D bundle manifest
 docs/               PLAN, SETUP, TESTING, DECISIONS, CHANGELOG
 ```
 
-Build (needs the .NET 10 SDK, Civil 3D 2027 and Revit 2027 installed):
+Each plugin is built once per year with `-p:HostYear=2025|2026|2027` (default 2027). 2025/2026 target `net8.0-windows` and compile against Autodesk's NuGet reference packages (`AutoCAD.NET`, `Civil3D.NET`, `Nice3point.Revit.Api.*`). 2027 targets `net10.0-windows` against the installed DLLs.
+
+Build (needs the .NET 10 SDK; the 2027 builds also need Civil 3D 2027 and Revit 2027 installed):
 
 ```powershell
 dotnet test C3dRevitLiveSync.sln                                   # unit tests
 dotnet build src\Civil3dPlugin\LiveSync.Civil3d.csproj             # dev build + deploy (see docs/SETUP.md)
 dotnet build src\RevitReceiver\LiveSync.Revit.csproj
-powershell -ExecutionPolicy Bypass -File tools\package-release.ps1 -Version 0.1.0   # release zip in dist\
+dotnet build src\RevitReceiver\LiveSync.Revit.csproj -p:HostYear=2025   # another year
+powershell -ExecutionPolicy Bypass -File tools\package-release.ps1 -Version 0.2.0   # all years, release zip in dist\
 ```
 
 Dev builds deploy to `%LOCALAPPDATA%\C3dRevitLiveSync\deploy\` and are loaded with `livesync-load.lsp`. **Don't load a dev build in Civil 3D while the installed bundle is present**, because the plugin would load twice. Run `Uninstall.bat` first. Full developer setup: [`docs/SETUP.md`](docs/SETUP.md). Test procedures: [`docs/TESTING.md`](docs/TESTING.md). Design decisions: [`docs/DECISIONS.md`](docs/DECISIONS.md).

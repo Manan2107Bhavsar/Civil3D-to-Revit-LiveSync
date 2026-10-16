@@ -6,11 +6,12 @@ Project notes for future Claude Code sessions. **Start with `docs/HANDOFF.md`** 
 - Civil 3D **2027** only (`C:\Program Files\Autodesk\AutoCAD 2027\C3D\AeccDbMgd.dll`). AutoCAD 2025/2026 have no C3D, despite older notes saying "Civil 3D 2026".
 - Revit **2027** (27.2) only. Toposolid API is available; there's no need for the TopographySurface fallback.
 - Both hosts run **.NET 10**, so target `net10.0-windows`. The SDK is 10.0.303.
+- **Multi-year (2026-10-16):** the plugins also build for 2025/2026 (.NET 8) via `-p:HostYear=2025|2026|2027` (default 2027, set in `Directory.Build.props`; bin/obj get a `<year>\` subfolder). 2025/2026 reference NuGet: `AutoCAD.NET` 25.0.1 / 25.1.0 (25.0.0 has a broken dependency), `Civil3D.NET` 13.7.145 / 13.8.280 (Autodesk, includes AecBaseMgd), `Nice3point.Revit.Api.*` 2025.0.2 / 2026.0.4, all `ExcludeAssets="runtime"`. Defines `CIVIL<year>` / `REVIT<year>`. Shared targets `net8.0;net10.0`, so guard .NET 9+ APIs with `#if NET9_0_OR_GREATER` (e.g. `Convert.ToHexStringLower`, `AllowOutOfOrderMetadataProperties`). On .NET 8, `"type"` must be first in a message. 2025/2026 aren't installed here, so they're compile-checked only.
 - Revit MCP: `C:\Users\bhavs\source\repos\mcp-servers-for-revit`, local branch `revit2027`. Don't change its behaviour without asking the user.
 - Civil 3D MCP (the user's own, Python + pywin32): `..\Jarvis\civil3d_bridge.py` (the logic), wrapped by `..\Jarvis\civil3d_mcp_server.py` (FastMCP) and `..\Jarvis\jarvis\mcp\servers\cad\server.py` (Jarvis). It isn't part of the sync loop; it's a candidate for Phase 2+ AI tools. Civil 3D 2027's COM ProgID is `AeccXUiLand.AeccApplication.13.9` (the only one registered). AutoCAD 2027 is `AutoCAD.Application.26`.
 
 ## Build / test
-- `dotnet test C3dRevitLiveSync.sln` (all shared tests). Build output goes to `%LOCALAPPDATA%\C3dRevitLiveSync\build\{bin,obj}\<Project>\` via `Directory.Build.props`; never commit or expect bin/obj in the repo.
+- `dotnet test C3dRevitLiveSync.sln` (all shared tests, on net8.0 and net10.0). `tools/package-release.ps1` builds the release zip for all years (`-p:SkipDeploy=true`). Build output goes to `%LOCALAPPDATA%\C3dRevitLiveSync\build\{bin,obj}\<Project>\` via `Directory.Build.props`; never commit or expect bin/obj in the repo.
 - `python tools/make_test_surface.py` regenerates `testdata/`.
 - Runtime files live in `%APPDATA%\C3dRevitLiveSync\` (`mapping.json`, `logs/`); `LIVESYNC_HOME` overrides this.
 - `LiveSync.Shared` must stay BCL-only (System.Text.Json): Revit and AutoCAD each load their own Newtonsoft, and a shared dependency invites version clashes.
